@@ -1,0 +1,58 @@
+:root { --bg:#1f1d1b; --panel:#2b2825; --text:#e8e4df; --muted:#9a948c; --accent:#7fa650; --bad:#d9534f; --border:#3c3834; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { background: var(--bg); }
+body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+       padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.layout { display:flex; flex-wrap:wrap; gap:24px; max-width:1150px; margin:0 auto; padding:24px; }
+.board-col { flex:1 1 420px; max-width:640px; }
+.side-col  { flex:1 1 320px; display:flex; flex-direction:column; gap:16px; min-width:0; }
+#board { width:100%; aspect-ratio:1; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+#board cg-board { touch-action:none; }
+.panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; }
+h1 { font-size:20px; margin:0; }
+h2 { font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+select, input[type=text], textarea { width:100%; background:#1a1816; color:var(--text); border:1px solid var(--border);
+       border-radius:6px; padding:8px; font:inherit; font-size:16px; margin-bottom:8px; }   /* 16px stops iOS zooming on focus */
+textarea { min-height:110px; font-family:ui-monospace, Menlo, monospace; font-size:14px; }
+button { background:var(--accent); color:#10140a; border:0; border-radius:8px; padding:9px 14px; font:inherit; font-weight:600; cursor:pointer; touch-action:manipulation; }
+button.secondary { background:#4a4540; color:var(--text); }
+button.danger { background:#5a2f2d; color:#f3c9c7; }
+button.small { padding:4px 10px; font-size:13px; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.check { display:flex; gap:6px; align-items:center; color:var(--muted); margin:8px 0 0; }
+#progress { color:var(--muted); font-size:13px; min-height:20px; }
+#status { min-height:44px; font-size:16px; }
+#status.good { color:var(--accent); } #status.bad { color:var(--bad); }
+table.stats { width:100%; border-collapse:collapse; margin-bottom:10px; }
+table.stats td { padding:3px 0; } table.stats td:last-child { text-align:right; font-weight:600; }
+table.stats th { text-align:left; color:var(--muted); font-weight:500; font-size:13px; }
+table.stats th:not(:first-child) { text-align:right; }
+.hidden { display:none !important; }
+#lineList { max-height:320px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.line { display:flex; gap:8px; align-items:center; padding:7px 0; border-top:1px solid var(--border); }
+.line:first-child { border-top:0; }
+.line .info { flex:1; min-width:0; }
+.line .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.line .san { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+details summary { cursor:pointer; color:var(--muted); }
+small, .muted { color:var(--muted); }
+.moves { background:#1a1816; border:1px solid var(--border); border-radius:6px; padding:8px; min-height:48px; max-height:150px; overflow-y:auto;
+         margin-bottom:8px; font-family:ui-monospace, Menlo, monospace; font-size:14px; line-height:1.9; }
+.moves .num { color:var(--muted); margin-left:4px; }
+.moves .mv { cursor:pointer; padding:1px 4px; border-radius:4px; }
+.moves .mv:hover { background:#5a2f2d; text-decoration:line-through; }
+.moves .mv.last { font-weight:700; color:var(--accent); }
+#edMsg, #dataMsg { margin-top:8px; font-size:14px; }
+#edMsg.good, #dataMsg.good { color:var(--accent); } #edMsg.bad, #dataMsg.bad { color:var(--bad); }
+
+/* Phones: board stays pinned at the top while the controls scroll beneath it. */
+@media (max-width: 760px) {
+  .layout { flex-direction:column; flex-wrap:nowrap; gap:10px; padding:0 10px 24px; }
+  .board-col { position:sticky; top:0; z-index:10; background:var(--bg); max-width:none; flex:none; padding:6px 0 8px; }
+  #board { width:min(100%, 52vh); margin:0 auto; }
+  .side-col { flex:none; }
+  .side-col > header { display:none; }
+  button { min-height:44px; }
+  button.small { min-height:36px; }
+}
