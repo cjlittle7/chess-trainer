@@ -143,6 +143,17 @@ export async function createCollection(name, color, pgn) {
   return { id: c.id, games: parsed.games, parsed: parsed.lines.length, total: c.lines.length, errors: parsed.errors };
 }
 
+export async function createEmptyCollection(name, color) {
+  name = (name || "").trim().slice(0, 200);
+  if (!name) throw new Error("Give the collection a name.");
+  if (!["white", "black"].includes(color)) throw new Error("Choose which colour you play.");
+  if (data.collections.some((c) => c.name.toLowerCase() === name.toLowerCase())) throw new Error("A collection with that name already exists.");
+  const c = { id: newId(), name, color, lines: [] };
+  data.collections.push(c);
+  await persist();
+  return { id: c.id };
+}
+
 export async function addPgn(collId, pgn) {
   const c = collection(collId);
   if (!c) throw new Error("Collection not found.");

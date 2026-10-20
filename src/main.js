@@ -4,14 +4,14 @@ import * as E from "./engine.js";
 import * as S from "./store.js";
 import * as T from "./trainer.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let ground;
 let state = null;      // the line being drilled: { t (trainer state), c, busy, active, missedHere, stats, view, lineId, name }
-let session = null;    // { queue:[lineIds], i, results:[] } when practising in sequence
+let session = null;    // { queue:[lineIds], i, results:[] } when practicing in sequence
 let editor = null;     // the line being recorded: { moves, redo, sans, view, pending, lineId, start }
 let setup = null;      // the position being set up: { tool, castle, turn, fullmove, carry, valid }
 
@@ -67,7 +67,7 @@ async function launch(c, line) {
 function startRandom() {
   const c = coll();
   if (!c || !c.lines.length) return setStatus("This collection has no lines yet.", "bad");
-  if (!c.lines.some((l) => !l.start)) return setStatus("This collection only has puzzles. Use \"Practise all lines in order\" instead.", "bad");
+  if (!c.lines.some((l) => !l.start)) return setStatus("This collection only has puzzles. Use \"Practice all lines in order\" instead.", "bad");
   session = null;
   setProgress("Random drill: a random path through the collection");
   return launch(c, null);
@@ -82,12 +82,12 @@ async function beginSessionLine() {
 }
 
 async function startSession(ids) {
-  if (!ids.length) return setStatus("There are no lines to practise in this collection yet.", "bad");
+  if (!ids.length) return setStatus("There are no lines to practice in this collection yet.", "bad");
   session = { queue: ids, i: 0, results: [] };
   await beginSessionLine();
 }
 
-function practiseAll() {
+function practiceAll() {
   const c = coll();
   const ids = c ? c.lines.map((l) => l.id) : [];
   if ($("shuffleChk").checked) for (let i = ids.length - 1; i > 0; i--) {
@@ -165,7 +165,7 @@ function finishLine() {
   const single = session.queue.length === 1;
   const last = session.i === session.queue.length - 1;
   showResult(`<h2>Line complete</h2>${table}<button id="nextBtn">${
-      single ? "Practise again" : last ? "See collection results" : "Next line →"}</button>`);
+      single ? "Practice again" : last ? "See collection results" : "Next line →"}</button>`);
   $("nextBtn").onclick = single ? () => startSession(session.queue) : nextLine;
 }
 
@@ -200,10 +200,10 @@ function showCollectionSummary() {
     </table>
     <div class="row">
       ${missed.length ? `<button id="retryBtn">Retry ${missed.length} line${missed.length > 1 ? "s" : ""} with problems</button>` : ""}
-      <button id="againBtn" class="secondary">Practise all again</button>
+      <button id="againBtn" class="secondary">Practice all again</button>
     </div>`);
   if (missed.length) $("retryBtn").onclick = () => startSession(missed.map((r) => r.lineId));
-  $("againBtn").onclick = practiseAll;
+  $("againBtn").onclick = practiceAll;
 }
 
 function resetTraining() {
@@ -242,16 +242,16 @@ function renderLines() {
   $("lineList").innerHTML = lines.length ? lines.map((l, i) => `
     <div class="line">
       <div class="info"><div class="name">${i + 1}. ${esc(l.name)}${l.start ? `<span class="tag">Puzzle · ${E.sideToMove(l.start)} to move</span>` : ""}</div><div class="san">${esc(lineSan(l))}</div></div>
-      <button class="small" data-practise="${l.id}">Practise</button>
+      <button class="small" data-practice="${l.id}">Practice</button>
       <button class="small secondary" data-edit="${l.id}">Edit</button>
       <button class="small danger" data-delete="${l.id}" title="Delete this line">✕</button>
     </div>`).join("") : '<span class="muted">No lines yet.</span>';
 }
 
 $("lineList").onclick = async (e) => {
-  const p = e.target.closest("[data-practise]"), d = e.target.closest("[data-delete]"), ed = e.target.closest("[data-edit]");
+  const p = e.target.closest("[data-practice]"), d = e.target.closest("[data-delete]"), ed = e.target.closest("[data-edit]");
   const c = coll();
-  if (p && guardEditor()) await startSession([Number(p.dataset.practise)]);
+  if (p && guardEditor()) await startSession([Number(p.dataset.practice)]);
   if (ed) {
     const l = c.lines.find((x) => x.id === Number(ed.dataset.edit));
     if (l) openEditor({ lineId: l.id, moves: l.moves, name: l.name, targetId: c.id, start: l.start });
@@ -275,6 +275,15 @@ async function createCollection() {
   try {
     const res = await S.createCollection($("impName").value, $("impColor").value, $("impPgn").value);
     importMessage(res, true); resetTraining(); refresh(res.id);
+  } catch (e) { importError(e); }
+}
+
+async function createEmpty() {
+  try {
+    const res = await S.createEmptyCollection($("impName").value, $("impColor").value);
+    $("impMsg").innerHTML = "<small>Created an empty collection. Press \"Record a line\" to add lines to it.</small>";
+    $("impName").value = "";
+    resetTraining(); refresh(res.id);
   } catch (e) { importError(e); }
 }
 
@@ -641,12 +650,19 @@ async function showStorage() {
 // ------------------------------------------------------------------- wiring
 $("hintBtn").onclick = hint;
 $("skipBtn").onclick = skipLine;
-$("allBtn").onclick = () => guardEditor() && practiseAll();
+$("allBtn").onclick = () => guardEditor() && practiceAll();
 $("randomBtn").onclick = () => guardEditor() && startRandom();
 $("recordBtn").onclick = () => openEditor();
 $("deleteBtn").onclick = deleteCollection;
 $("createBtn").onclick = createCollection;
 $("extendBtn").onclick = extendCollection;
+$("emptyBtn").onclick = createEmpty;
+$("newCollBtn").onclick = () => {
+  const box = $("createBox"); box.open = true;
+  box.scrollIntoView?.({ block: "nearest" });
+  $("impName").focus();
+  $("impMsg").innerHTML = "<small>Type a name, choose your colour, then press \"Create empty collection\".</small>";
+};
 $("repSelect").onchange = () => { resetTraining(); renderLines(); if (setup) renderSetupLines(); };
 $("exportBtn").onclick = exportBackup;
 $("importBtn").onclick = () => $("importFile").click();

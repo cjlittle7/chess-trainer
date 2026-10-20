@@ -35,12 +35,13 @@
       <h2>Collection</h2>
       <select id="repSelect"></select>
       <div class="row">
-        <button id="allBtn">Practise all lines in order</button>
+        <button id="allBtn">Practice all lines in order</button>
         <button id="randomBtn" class="secondary">Random drill</button>
         <button id="recordBtn" class="secondary">Record a line</button>
         <button id="puzzleBtn" class="secondary">Record a puzzle</button>
       </div>
       <label class="check"><input type="checkbox" id="shuffleChk"> Shuffle line order</label>
+      <div class="row" style="margin-top:10px"><button id="newCollBtn" class="secondary small">+ New empty collection</button></div>
       <div class="row" style="margin-top:10px"><button id="deleteBtn" class="danger small">Delete collection</button></div>
     </div>
 
@@ -124,7 +125,7 @@
     </div>
 
     <div class="panel">
-      <details>
+      <details id="createBox">
         <summary>Create or extend a collection (paste PGN)</summary>
         <div style="margin-top:12px">
           <input type="text" id="impName" placeholder="New collection name, e.g. Caro-Kann">
@@ -132,6 +133,7 @@
           <textarea id="impPgn" placeholder="Paste one or more games. Variations (in parentheses) become separate lines.&#10;&#10;1. e4 c6 2. d4 d5 3. Nc3 (3. e5 Bf5) 3... dxe4 *"></textarea>
           <div class="row">
             <button id="createBtn">Create new collection</button>
+            <button id="emptyBtn" class="secondary">Create empty collection</button>
             <button id="extendBtn" class="secondary">Add to selected collection</button>
           </div>
           <div id="impMsg" style="margin-top:8px"><small>Each game, and each variation within a game, becomes its own line.

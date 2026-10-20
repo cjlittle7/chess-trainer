@@ -39,9 +39,9 @@ A line can start from any position, not just the opening position. Puzzles live 
   start from the position after any move of a line you already have.
 - The setup refuses impossible positions and says why (no king, pawn on the last rank, side not to move in check, ...).
 - **Start recording** locks the position and opens the normal line editor (undo, tap a move to delete it, promotions).
-  Save as many solutions as you like. Each is its own line, and practising works as for any other line.
-- When you practise a puzzle you play the side that is to move in the starting position.
-- Random drill only walks opening lines; "Practise all lines in order" includes puzzles.
+  Save as many solutions as you like. Each is its own line, and practicing works as for any other line.
+- When you practice a puzzle you play the side that is to move in the starting position.
+- Random drill only walks opening lines; "Practice all lines in order" includes puzzles.
 - Pasting PGN with a `[FEN "..."]` header now imports it as a puzzle instead of skipping it.
 - Backups made before puzzles existed still import fine, and backups now keep each line's starting position.
 
