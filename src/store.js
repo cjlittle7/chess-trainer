@@ -1,5 +1,6 @@
 // Collections & lines, kept in memory and saved to IndexedDB (this device's browser storage).
-import { parsePgn } from "chessops/pgn";
+import { parsePgn, startingPosition } from "chessops/pgn";
+import { makeFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import * as E from "./engine.js";
 
@@ -64,7 +65,7 @@ export function book(c) {
   if (bookCache.has(c.id)) return bookCache.get(c.id);
   const out = new Map();
   for (const line of c.lines) {
-    const pos = E.newPos();
+    const pos = E.newPos(line.start);
     for (const uci of line.moves) {
       const k = E.key(pos);
       const san = E.play(pos, uci);
@@ -83,8 +84,11 @@ export function linesFromPgn(text) {
   let games = 0, errors = 0;
   for (const game of parsePgn(text)) {
     games++;
-    const fen = game.headers.get("FEN");
-    if (fen && fen.split(" ")[0] !== E.START_BOARD) { errors++; continue; }   // standard start only
+    const sp = startingPosition(game.headers);              // honours a [FEN] header (puzzles / set-up positions)
+    if (sp.isErr) { errors++; continue; }
+    const pos0 = sp.unwrap();
+    let start;
+    try { start = E.normalizeStart(makeFen(pos0.toSetup())); } catch { errors++; continue; }
     const paths = [];
     const walk = (node, pos, path) => {
       let advanced = false;
@@ -99,21 +103,22 @@ export function linesFromPgn(text) {
       }
       if (!advanced && path.length) paths.push(path);
     };
-    walk(game.moves, E.newPos(), []);
+    walk(game.moves, pos0, []);
     let title = (game.headers.get("Event") || "").trim();
     if (["", "?", "Casual Game"].includes(title)) title = `Game ${games}`;
-    paths.forEach((moves, i) => lines.push({ name: paths.length === 1 ? title : `${title} (${i + 1}/${paths.length})`, moves }));
+    paths.forEach((moves, i) => lines.push({ name: paths.length === 1 ? title : `${title} (${i + 1}/${paths.length})`, moves, ...(start ? { start } : {}) }));
   }
   return { lines, games, errors };
 }
 
 /** Drop exact duplicates and lines that are only the opening part of a longer line. */
 function prune(c) {
+  const sk = new Map(c.lines.map((l) => [l, E.startKey(l.start)]));   // lines only merge with lines from the same start
   const prefixes = new Set();
-  for (const l of c.lines) for (let i = 1; i < l.moves.length; i++) prefixes.add(l.moves.slice(0, i).join(" "));
+  for (const l of c.lines) for (let i = 1; i < l.moves.length; i++) prefixes.add(sk.get(l) + "|" + l.moves.slice(0, i).join(" "));
   const seen = new Set();
   c.lines = c.lines.filter((l) => {
-    const k = l.moves.join(" ");
+    const k = sk.get(l) + "|" + l.moves.join(" ");
     if (prefixes.has(k) || seen.has(k)) return false;
     seen.add(k);
     return true;
@@ -121,7 +126,7 @@ function prune(c) {
 }
 
 function addCollection(name, color, parsedLines) {
-  const c = { id: newId(), name, color, lines: parsedLines.map((l) => ({ id: newId(), name: l.name, moves: l.moves })) };
+  const c = { id: newId(), name, color, lines: parsedLines.map((l) => ({ id: newId(), name: l.name, moves: l.moves, ...(l.start ? { start: l.start } : {}) })) };
   data.collections.push(c);
   prune(c);
   return c;
@@ -144,7 +149,7 @@ export async function addPgn(collId, pgn) {
   if (!(pgn || "").trim()) throw new Error("Paste some PGN first.");
   const parsed = linesFromPgn(pgn);
   if (!parsed.lines.length) throw new Error("No playable moves found in that PGN.");
-  for (const l of parsed.lines) c.lines.push({ id: newId(), name: l.name, moves: l.moves });
+  for (const l of parsed.lines) c.lines.push({ id: newId(), name: l.name, moves: l.moves, ...(l.start ? { start: l.start } : {}) });
   prune(c);
   bookCache.delete(c.id);
   await persist();
@@ -166,9 +171,10 @@ export async function deleteLine(collId, lineId) {
 }
 
 /** Save a recorded line (new, or an edit of lineId). Merges duplicates / shorter prefixes. */
-export async function saveLine({ collId, newCollection, name, moves, lineId = null }) {
+export async function saveLine({ collId, newCollection, name, moves, start, lineId = null }) {
   if (!moves.length) throw new Error("Play at least one move first.");
-  E.replay(moves);                                              // throws if illegal
+  start = E.normalizeStart(start);                              // undefined = standard position
+  E.replay(moves, start);                                       // throws if illegal
   name = (name || "").trim().slice(0, 200);
   let c;
   if (newCollection) {
@@ -185,9 +191,10 @@ export async function saveLine({ collId, newCollection, name, moves, lineId = nu
     line = c.lines.find((l) => l.id === lineId);
     if (!line) throw new Error("Line not found.");
     line.moves = moves.slice();
+    if (start) line.start = start; else delete line.start;
     if (name) line.name = name;
   } else {
-    line = { id: newId(), name: name || `Line ${c.lines.length + 1}`, moves: moves.slice() };
+    line = { id: newId(), name: name || `${start ? "Puzzle" : "Line"} ${c.lines.length + 1}`, moves: moves.slice(), ...(start ? { start } : {}) };
     c.lines.push(line);
   }
   const before = c.lines.filter((l) => l !== line).map((l) => ({ id: l.id, name: l.name }));
@@ -217,8 +224,9 @@ export async function importJson(text) {
     for (const l of c.lines) {
       try {
         if (!l || !Array.isArray(l.moves) || !l.moves.length) throw new Error();
-        E.replay(l.moves);
-        lines.push({ id: nextId++, name: String(l.name || "Line").slice(0, 200), moves: l.moves.slice() });
+        const start = E.normalizeStart(typeof l.start === "string" ? l.start : undefined);
+        E.replay(l.moves, start);
+        lines.push({ id: nextId++, name: String(l.name || "Line").slice(0, 200), moves: l.moves.slice(), ...(start ? { start } : {}) });
       } catch { dropped++; }
     }
     lineTotal += lines.length;

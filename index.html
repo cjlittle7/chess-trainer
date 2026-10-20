@@ -38,15 +38,61 @@
         <button id="allBtn">Practise all lines in order</button>
         <button id="randomBtn" class="secondary">Random drill</button>
         <button id="recordBtn" class="secondary">Record a line</button>
+        <button id="puzzleBtn" class="secondary">Record a puzzle</button>
       </div>
       <label class="check"><input type="checkbox" id="shuffleChk"> Shuffle line order</label>
       <div class="row" style="margin-top:10px"><button id="deleteBtn" class="danger small">Delete collection</button></div>
+    </div>
+
+    <div id="setupPanel" class="panel hidden">
+      <h2>Position setup</h2>
+      <p class="muted" style="margin:0 0 10px">Drag a piece from the palette onto the board, or tap a piece and then tap squares to place it.
+        Drag a piece off the board to remove it.</p>
+      <div id="palette" class="palette cg-wrap" role="toolbar" aria-label="Piece palette"></div>
+      <div class="row" style="margin:10px 0">
+        <button id="suStandard" class="secondary small">Standard position</button>
+        <button id="suEmpty" class="secondary small">Empty board</button>
+        <button id="suFlip" class="secondary small">Flip board</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="muted" for="suTurn">To move:</label>
+        <select id="suTurn" style="width:auto;margin:0"><option value="white">White</option><option value="black">Black</option></select>
+      </div>
+      <div class="row muted" style="margin-bottom:10px">Castling:
+        <label><input type="checkbox" id="suK"> White O-O</label>
+        <label><input type="checkbox" id="suQ"> White O-O-O</label>
+        <label><input type="checkbox" id="suk"> Black O-O</label>
+        <label><input type="checkbox" id="suq"> Black O-O-O</label>
+      </div>
+      <input type="text" id="suFen" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="FEN">
+      <div class="row" style="margin-bottom:10px">
+        <button id="suLoadFen" class="secondary small">Load FEN</button>
+        <button id="suCopyFen" class="secondary small">Copy FEN</button>
+      </div>
+      <details id="suLineBox" style="margin-bottom:10px">
+        <summary>Start from a position in one of this collection's lines</summary>
+        <div style="margin-top:8px">
+          <select id="suLine"></select>
+          <input type="range" id="suPly" min="0" max="0" value="0" style="width:100%">
+          <div id="suPlyLabel" class="muted"></div>
+          <button id="suUseLine" class="secondary small" style="margin-top:6px">Use this position</button>
+        </div>
+      </details>
+      <div id="suMsg" class="muted" style="margin-bottom:10px"></div>
+      <div class="row">
+        <button id="suRecord">Start recording</button>
+        <button id="suCancel" class="secondary">Cancel</button>
+      </div>
     </div>
 
     <div id="editorPanel" class="panel hidden">
       <h2>Line editor</h2>
       <p class="muted" style="margin:0 0 10px">Play the moves for <em>both</em> sides on the board. Made a mistake? Use Undo,
         or tap any move in the list to delete it and everything after it.</p>
+      <div id="edStartRow" class="row muted hidden" style="margin-bottom:8px">
+        <span id="edStartLabel"></span>
+        <button id="edChangePos" class="small secondary">Change position</button>
+      </div>
       <select id="edTarget"></select>
       <div id="edNew" class="hidden">
         <input type="text" id="edNewName" placeholder="New collection name">

@@ -1,9 +1,10 @@
 import { Chessground } from "@lichess-org/chessground";
+import { parseFen } from "chessops/fen";
 import * as E from "./engine.js";
 import * as S from "./store.js";
 import * as T from "./trainer.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -11,7 +12,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let ground;
 let state = null;      // the line being drilled: { t (trainer state), c, busy, active, missedHere, stats, view, lineId, name }
 let session = null;    // { queue:[lineIds], i, results:[] } when practising in sequence
-let editor = null;     // the line being recorded: { moves, redo, sans, view, pending, lineId }
+let editor = null;     // the line being recorded: { moves, redo, sans, view, pending, lineId, start }
+let setup = null;      // the position being set up: { tool, castle, turn, fullmove, carry, valid }
 
 const coll = () => S.collection(Number($("repSelect").value));
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -35,9 +37,11 @@ function initBoard() {
     movable: { free: false, showDests: true, color: undefined, events: { after: onUserMove } },
     highlight: { lastMove: true, check: true },
   });
+  if (location.hash === "#debug") window.__ground = ground;   // lets automated tests inspect the board
 }
 
 function onUserMove(from, to) {
+  if (setup) return;                         // free piece moves while setting up a position
   if (editor) return onEditorMove(from, to);
   return onTrainMove(from, to);
 }
@@ -56,13 +60,14 @@ async function launch(c, line) {
   st.busy = false;
   $("hintBtn").disabled = false;
   $("skipBtn").disabled = !session;
-  setStatus(`Your move (${c.color}).`);
+  setStatus(b.t.start ? `Puzzle: find the best move for ${b.t.color}.` : `Your move (${b.t.color}).`);
   if (b.finished) finishLine();
 }
 
 function startRandom() {
   const c = coll();
   if (!c || !c.lines.length) return setStatus("This collection has no lines yet.", "bad");
+  if (!c.lines.some((l) => !l.start)) return setStatus("This collection only has puzzles. Use \"Practise all lines in order\" instead.", "bad");
   session = null;
   setProgress("Random drill: a random path through the collection");
   return launch(c, null);
@@ -205,7 +210,7 @@ function resetTraining() {
   state = null; session = null;
   hideResult(); setProgress("");
   $("hintBtn").disabled = true; $("skipBtn").disabled = true;
-  if (editor) return;                    // keep the editor's board as it is
+  if (editor || setup) return;           // keep the editor's / setup board as it is
   ground.set({ fen: E.START_BOARD, lastMove: undefined, check: false, orientation: "white",
                movable: { color: undefined, dests: new Map() } });
   ground.setAutoShapes([]);
@@ -215,8 +220,8 @@ function resetTraining() {
 // ------------------------------------------------------ collections & lines
 const sanCache = new Map();
 function lineSan(l) {
-  const k = l.moves.join(" ");
-  if (!sanCache.has(k)) sanCache.set(k, E.sanLine(E.replay(l.moves).sans));
+  const k = (l.start || "") + "|" + l.moves.join(" ");
+  if (!sanCache.has(k)) sanCache.set(k, E.sanLine(E.replay(l.moves, l.start).sans, l.start));
   return sanCache.get(k);
 }
 
@@ -228,6 +233,7 @@ function refresh(selectId) {
   else if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
   renderEditorTargets(selectId != null ? String(selectId) : keepTarget);
   renderLines();
+  if (setup) renderSetupLines();
 }
 
 function renderLines() {
@@ -235,7 +241,7 @@ function renderLines() {
   $("lineCount").textContent = lines.length;
   $("lineList").innerHTML = lines.length ? lines.map((l, i) => `
     <div class="line">
-      <div class="info"><div class="name">${i + 1}. ${esc(l.name)}</div><div class="san">${esc(lineSan(l))}</div></div>
+      <div class="info"><div class="name">${i + 1}. ${esc(l.name)}${l.start ? `<span class="tag">Puzzle · ${E.sideToMove(l.start)} to move</span>` : ""}</div><div class="san">${esc(lineSan(l))}</div></div>
       <button class="small" data-practise="${l.id}">Practise</button>
       <button class="small secondary" data-edit="${l.id}">Edit</button>
       <button class="small danger" data-delete="${l.id}" title="Delete this line">✕</button>
@@ -248,7 +254,7 @@ $("lineList").onclick = async (e) => {
   if (p && guardEditor()) await startSession([Number(p.dataset.practise)]);
   if (ed) {
     const l = c.lines.find((x) => x.id === Number(ed.dataset.edit));
-    if (l) openEditor({ lineId: l.id, moves: l.moves, name: l.name, targetId: c.id });
+    if (l) openEditor({ lineId: l.id, moves: l.moves, name: l.name, targetId: c.id, start: l.start });
   }
   if (d && confirm("Delete this line from the collection?")) {
     const id = Number(d.dataset.delete);
@@ -291,6 +297,7 @@ async function deleteCollection() {
 
 // -------------------------------------------------------------- line editor
 function guardEditor() {
+  if (setup) { closeSetup(); resetTraining(); return true; }
   if (!editor) return true;
   if (editor.moves.length && !confirm("Discard the line you're recording?")) return false;
   closeEditor();
@@ -313,22 +320,26 @@ function syncEditorTarget() {
   const v = $("edTarget").value;
   $("edNew").classList.toggle("hidden", v !== "new");
   const color = v === "new" ? $("edNewColor").value : (S.collection(Number(v))?.color || "white");
-  if (editor) ground.set({ orientation: color });
+  if (editor && !editor.start) ground.set({ orientation: color });
 }
 
-function openEditor({ lineId = null, moves = [], name = "", targetId = coll()?.id } = {}) {
+function openEditor({ lineId = null, moves = [], name = "", targetId = coll()?.id, start = null, orientation } = {}) {
   if (!guardEditor()) return;
   state = null; session = null; hideResult(); setProgress("");
   $("hintBtn").disabled = true; $("skipBtn").disabled = true;
-  editor = { moves: [], redo: [], sans: [], view: null, pending: null, lineId };
+  editor = { moves: [], redo: [], sans: [], view: null, pending: null, lineId, start: start || null };
+  $("edStartRow").classList.toggle("hidden", !start);
+  $("edStartLabel").textContent = start ? `Custom position · ${E.sideToMove(start) === "white" ? "White" : "Black"} to move` : "";
   $("editorPanel").classList.remove("hidden");
   $("edName").value = name;
   editorMsg("");
   renderEditorTargets(targetId);
   $("edTarget").disabled = lineId !== null;        // an edited line stays in its own collection
   $("edSave").textContent = lineId !== null ? "Save changes" : "Save line";
+  if (start) ground.set({ orientation: orientation || E.sideToMove(start) });
   setStatus(lineId !== null ? "Editing a saved line. Undo or tap moves to change it."
-                            : "Recording: play the moves for both sides.");
+          : start ? "Recording a puzzle: play the solution for both sides."
+          : "Recording: play the moves for both sides.");
   editorSet(moves, []);
   $("editorPanel").scrollIntoView?.({ block: "nearest" });
 }
@@ -342,7 +353,7 @@ function closeEditor() {
 
 function editorSet(moves, redo) {
   let r;
-  try { r = E.replay(moves); } catch (e) { return editorMsg(e.message, true); }
+  try { r = E.replay(moves, editor.start || undefined); } catch (e) { return editorMsg(e.message, true); }
   editor.moves = moves; editor.redo = redo; editor.sans = r.sans;
   editor.view = E.view(r.pos, moves[moves.length - 1]);
   showPosition(editor.view, { interactive: !editor.pending });
@@ -356,7 +367,7 @@ function renderMoveList() {
   const box = $("edMoves"), s = editor.sans;
   if (!s.length) { box.innerHTML = '<span class="muted">No moves yet. Drag a piece on the board.</span>'; return; }
   box.innerHTML = s.map((san, i) =>
-    (i % 2 === 0 ? `<span class="num">${i / 2 + 1}.</span>` : "") +
+    (E.plyLabel(i, editor.start) ? `<span class="num">${E.plyLabel(i, editor.start)}</span>` : "") +
     `<span class="mv${i === s.length - 1 ? " last" : ""}" data-i="${i}" title="Delete this move and everything after it">${esc(san)}</span>`
   ).join(" ");
   box.scrollTop = box.scrollHeight;
@@ -365,7 +376,7 @@ function renderMoveList() {
 function onEditorMove(from, to, promotion) {
   const ed = editor;
   if (!ed) return;
-  const { pos } = E.replay(ed.moves);
+  const { pos } = E.replay(ed.moves, ed.start || undefined);
   const cands = E.legalFromTo(pos, from, to);
   if (!cands.length) { showPosition(ed.view, { interactive: true }); return; }
   let uci = cands[0];
@@ -395,7 +406,7 @@ async function saveEditorLine() {
   if (!ed) return;
   if (!ed.moves.length) return editorMsg("Play at least one move first.", true);
   const target = $("edTarget").value;
-  const args = { moves: ed.moves, name: $("edName").value, lineId: ed.lineId };
+  const args = { moves: ed.moves, name: $("edName").value, lineId: ed.lineId, start: ed.start || undefined };
   if (target === "new") args.newCollection = { name: $("edNewName").value, color: $("edNewColor").value };
   else args.collId = Number(target);
   let res;
@@ -414,6 +425,182 @@ async function saveEditorLine() {
   editorSet([], []);
   editorMsg(`Saved to "${res.collection}" (${res.total} lines now).${note} Record another, or close the editor.`);
 }
+
+// ------------------------------------------------------------ position setup (puzzles)
+const ROLES = ["king", "queen", "rook", "bishop", "knight", "pawn"];
+const suMsg = (t, bad = false) => { const m = $("suMsg"); m.textContent = t; m.className = bad ? "bad" : ""; };
+
+function buildPalette() {
+  const cells = (color) => ROLES.map((role) =>
+    `<button class="pal" data-color="${color}" data-role="${role}" aria-label="${color} ${role}" title="${color} ${role}"><piece class="${role} ${color}"></piece></button>`).join("");
+  $("palette").innerHTML = cells("white") + '<button class="pal" data-tool="hand" aria-label="Move pieces" title="Move pieces on the board"><span class="glyph">✋</span></button>' +
+                           cells("black") + '<button class="pal" data-tool="erase" aria-label="Eraser" title="Tap squares to remove pieces"><span class="glyph">🗑</span></button>';
+}
+
+// tool: null = move pieces, "erase", or { color, role } = tap squares to place that piece
+function setTool(tool) {
+  setup.tool = tool;
+  for (const b of $("palette").querySelectorAll(".pal")) {
+    b.classList.toggle("on", tool === null ? b.dataset.tool === "hand"
+      : tool === "erase" ? b.dataset.tool === "erase"
+      : b.dataset.color === tool.color && b.dataset.role === tool.role);
+  }
+  const placing = tool !== null;
+  ground.set({ draggable: { enabled: !placing }, selectable: { enabled: !placing }, movable: { color: placing ? undefined : "both" } });
+}
+
+function setupFen() {
+  const board = ground.getFen(), avail = E.castlingAvailable(board);
+  const c = ["K", "Q", "k", "q"].filter((x) => setup.castle[x] && avail[x]).join("") || "-";
+  return `${board} ${setup.turn === "white" ? "w" : "b"} ${c} - 0 ${setup.fullmove}`;
+}
+
+function refreshSetup() {
+  if (!setup) return;
+  const fen = setupFen(), avail = E.castlingAvailable(ground.getFen());
+  for (const x of ["K", "Q", "k", "q"]) { const el = $("su" + x); el.disabled = !avail[x]; el.checked = !!setup.castle[x] && avail[x]; }
+  $("suTurn").value = setup.turn;
+  if (document.activeElement !== $("suFen")) $("suFen").value = fen;
+  const v = E.validateStart(fen);
+  setup.valid = v.ok;
+  suMsg(v.ok ? "Position looks good." : v.error, !v.ok);
+  $("suMsg").classList.toggle("good", v.ok);
+  $("suRecord").disabled = !v.ok;
+}
+
+function loadSetupFen(fen) {
+  const f = (fen || "").trim().split(/\s+/);
+  if (!f[0] || parseFen(fen.trim()).isErr) { suMsg("That isn't a valid FEN.", true); return false; }
+  setup.turn = f[1] === "b" ? "black" : "white";
+  const cr = f[2] || "-";
+  setup.castle = { K: cr.includes("K"), Q: cr.includes("Q"), k: cr.includes("k"), q: cr.includes("q") };
+  setup.fullmove = parseInt(f[5], 10) > 0 ? parseInt(f[5], 10) : 1;
+  ground.set({ fen: f[0], lastMove: undefined, check: false });
+  refreshSetup();
+  return true;
+}
+
+function enterSetup({ fen = E.START_FEN, carry = {}, orientation = "white" } = {}) {
+  state = null; session = null; editor = null; hideResult(); setProgress("");
+  $("hintBtn").disabled = true; $("skipBtn").disabled = true;
+  $("editorPanel").classList.add("hidden"); $("edPromo").classList.add("hidden");
+  $("setupPanel").classList.remove("hidden");
+  setup = { tool: null, castle: { K: true, Q: true, k: true, q: true }, turn: "white", fullmove: 1, carry, valid: false };
+  ground.set({
+    orientation, lastMove: undefined, check: false,
+    highlight: { lastMove: false, check: false },
+    movable: { free: true, color: "both", showDests: false, dests: new Map() },
+    draggable: { enabled: true, deleteOnDropOff: true }, selectable: { enabled: true },
+    events: { change: refreshSetup },
+  });
+  ground.setAutoShapes([]);
+  setTool(null);
+  loadSetupFen(fen);
+  renderSetupLines();
+  setStatus("Set up the position, then press Start recording.");
+  $("setupPanel").scrollIntoView?.({ block: "nearest" });
+}
+
+function closeSetup() {
+  setup = null;
+  $("setupPanel").classList.add("hidden");
+  ground.set({
+    highlight: { lastMove: true, check: true },
+    movable: { free: false, color: undefined, dests: new Map() },
+    draggable: { enabled: true, deleteOnDropOff: false }, selectable: { enabled: true },
+    events: { change: undefined },
+  });
+}
+
+function startRecording() {
+  if (!setup) return;
+  const v = E.validateStart(setupFen());
+  if (!v.ok) return suMsg(v.error, true);
+  const { carry } = setup, orientation = ground.state.orientation;
+  closeSetup();
+  openEditor({ ...carry, start: E.normalizeStart(v.fen), orientation });
+}
+
+function renderSetupLines() {
+  const c = coll(), lines = c ? c.lines : [];
+  $("suLineBox").classList.toggle("hidden", !lines.length);
+  $("suLine").innerHTML = lines.map((l, i) => `<option value="${l.id}">${i + 1}. ${esc(l.name)}</option>`).join("");
+  syncSetupPly(true);
+}
+
+function syncSetupPly(reset) {
+  const c = coll(), l = c && c.lines.find((x) => x.id === Number($("suLine").value)), r = $("suPly");
+  if (!l) { $("suPlyLabel").textContent = ""; return; }
+  r.max = l.moves.length;
+  if (reset) r.value = l.moves.length;
+  const n = Number(r.value);
+  const text = n === 0 ? "" : E.sanLine(E.replay(l.moves.slice(0, n), l.start).sans, l.start).split(" ").slice(-3).join(" ");
+  $("suPlyLabel").textContent = n === 0 ? "Before the first move" : `After … ${text}`;
+}
+
+function chooseTool(b) {
+  if (b.dataset.tool === "hand") setTool(null);
+  else if (b.dataset.tool === "erase") setTool("erase");
+  else setTool({ color: b.dataset.color, role: b.dataset.role });
+}
+$("palette").addEventListener("click", (e) => {
+  const b = e.target.closest(".pal");
+  if (b && setup) chooseTool(b);
+});
+const startPaletteDrag = (e) => {            // pressing a palette piece and dragging drops a new piece on the board
+  const b = e.target.closest(".pal");
+  if (!b || !setup || !b.dataset.role) return;
+  setTool(null);
+  ground.dragNewPiece({ color: b.dataset.color, role: b.dataset.role }, e, true);
+};
+$("palette").addEventListener("mousedown", startPaletteDrag);
+// On touch screens Chessground cancels the browser's click while a drag is active, so detect taps ourselves.
+let tapAt = null;
+$("palette").addEventListener("touchstart", (e) => {
+  startPaletteDrag(e);
+  const t = e.touches[0];
+  tapAt = t ? { x: t.clientX, y: t.clientY } : null;
+}, { passive: true });
+$("palette").addEventListener("touchend", (e) => {
+  const b = e.target.closest(".pal"), t = e.changedTouches[0];
+  if (b && setup && tapAt && t && Math.hypot(t.clientX - tapAt.x, t.clientY - tapAt.y) < 10) chooseTool(b);
+  tapAt = null;
+});
+$("board").addEventListener("pointerdown", (e) => {   // tap-to-place with a palette tool selected
+  if (!setup || !setup.tool) return;
+  const key = ground.getKeyAtDomPos([e.clientX, e.clientY]);
+  if (!key) return;
+  e.preventDefault();
+  ground.setPieces(new Map([[key, setup.tool === "erase" ? undefined : { color: setup.tool.color, role: setup.tool.role }]]));
+  refreshSetup();
+}, true);
+
+$("puzzleBtn").onclick = () => { if (guardEditor()) enterSetup({ carry: { targetId: coll()?.id } }); };
+$("suStandard").onclick = () => setup && loadSetupFen(E.START_FEN);
+$("suEmpty").onclick = () => setup && loadSetupFen("8/8/8/8/8/8/8/8 w - - 0 1");
+$("suFlip").onclick = () => setup && ground.toggleOrientation();
+$("suTurn").onchange = () => { if (setup) { setup.turn = $("suTurn").value; refreshSetup(); } };
+for (const x of ["K", "Q", "k", "q"]) $("su" + x).onchange = () => { if (setup) { setup.castle[x] = $("su" + x).checked; refreshSetup(); } };
+$("suLoadFen").onclick = () => setup && loadSetupFen($("suFen").value);
+$("suFen").onkeydown = (e) => { if (e.key === "Enter" && setup) loadSetupFen($("suFen").value); };
+$("suCopyFen").onclick = async () => {
+  try { await navigator.clipboard.writeText($("suFen").value); suMsg("FEN copied."); }
+  catch { $("suFen").select(); suMsg("Copy the selected FEN with your device's copy command."); }
+};
+$("suLine").onchange = () => syncSetupPly(true);
+$("suPly").oninput = () => syncSetupPly(false);
+$("suUseLine").onclick = () => {
+  const c = coll(), l = c && c.lines.find((x) => x.id === Number($("suLine").value));
+  if (setup && l) loadSetupFen(E.fenAfter(l.moves, Number($("suPly").value), l.start));
+};
+$("suRecord").onclick = startRecording;
+$("suCancel").onclick = () => { closeSetup(); resetTraining(); };
+$("edChangePos").onclick = () => {
+  if (!editor || !editor.start) return;
+  if (editor.moves.length && !confirm("Changing the position clears the moves you've recorded. Continue?")) return;
+  const carry = { lineId: editor.lineId, name: $("edName").value, targetId: $("edTarget").value };
+  enterSetup({ fen: editor.start, carry, orientation: ground.state.orientation });
+};
 
 // ------------------------------------------------------------ backup & sync
 const dataMsg = (t, bad = false) => { const m = $("dataMsg"); m.textContent = t; m.className = t ? (bad ? "bad" : "good") : ""; };
@@ -460,7 +647,7 @@ $("recordBtn").onclick = () => openEditor();
 $("deleteBtn").onclick = deleteCollection;
 $("createBtn").onclick = createCollection;
 $("extendBtn").onclick = extendCollection;
-$("repSelect").onchange = () => { resetTraining(); renderLines(); };
+$("repSelect").onchange = () => { resetTraining(); renderLines(); if (setup) renderSetupLines(); };
 $("exportBtn").onclick = exportBackup;
 $("importBtn").onclick = () => $("importFile").click();
 $("importFile").onchange = async (e) => { await importBackup(e.target.files[0]); e.target.value = ""; };
@@ -489,6 +676,7 @@ $("edNewColor").onchange = syncEditorTarget;
 
 async function main() {
   initBoard();
+  buildPalette();
   $("version").textContent = `Opening Trainer v${VERSION}`;
   await S.load();
   refresh();
