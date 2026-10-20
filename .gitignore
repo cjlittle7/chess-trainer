@@ -1,0 +1,5 @@
+node_modules/
+# your personal data: keep it out of the public repo
+opening-trainer-data*.json
+*.db
+*.bak

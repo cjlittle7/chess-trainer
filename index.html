@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Opening Trainer</title>
+<meta name="theme-color" content="#1f1d1b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Openings">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <div class="board-col"><div id="board" class="cg-wrap"></div></div>
+
+  <div class="side-col">
+    <header><h1>Opening Trainer</h1></header>
+
+    <div class="panel">
+      <div id="progress"></div>
+      <div id="status">Choose a collection and press a practice button.</div>
+      <div class="row">
+        <button id="hintBtn" class="secondary" disabled>Hint</button>
+        <button id="skipBtn" class="secondary" disabled>Skip line</button>
+      </div>
+    </div>
+
+    <div id="result" class="panel hidden"></div>
+
+    <div class="panel">
+      <h2>Collection</h2>
+      <select id="repSelect"></select>
+      <div class="row">
+        <button id="allBtn">Practise all lines in order</button>
+        <button id="randomBtn" class="secondary">Random drill</button>
+        <button id="recordBtn" class="secondary">Record a line</button>
+      </div>
+      <label class="check"><input type="checkbox" id="shuffleChk"> Shuffle line order</label>
+      <div class="row" style="margin-top:10px"><button id="deleteBtn" class="danger small">Delete collection</button></div>
+    </div>
+
+    <div id="editorPanel" class="panel hidden">
+      <h2>Line editor</h2>
+      <p class="muted" style="margin:0 0 10px">Play the moves for <em>both</em> sides on the board. Made a mistake? Use Undo,
+        or tap any move in the list to delete it and everything after it.</p>
+      <select id="edTarget"></select>
+      <div id="edNew" class="hidden">
+        <input type="text" id="edNewName" placeholder="New collection name">
+        <select id="edNewColor"><option value="white">I play White</option><option value="black">I play Black</option></select>
+      </div>
+      <input type="text" id="edName" placeholder="Line name (optional)">
+      <div id="edMoves" class="moves"></div>
+      <div id="edPromo" class="hidden" style="margin-bottom:8px">
+        <span class="muted">Promote to:</span>
+        <button class="small" data-p="q">Queen</button> <button class="small" data-p="r">Rook</button>
+        <button class="small" data-p="b">Bishop</button> <button class="small" data-p="n">Knight</button>
+        <button class="small secondary" data-cancel="1">Cancel</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <button id="edUndo" class="secondary" disabled>Undo</button>
+        <button id="edRedo" class="secondary" disabled>Redo</button>
+        <button id="edClear" class="secondary" disabled>Clear</button>
+      </div>
+      <div class="row">
+        <button id="edSave">Save line</button>
+        <button id="edClose" class="secondary">Close editor</button>
+      </div>
+      <div id="edMsg"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Lines in this collection (<span id="lineCount">0</span>)</h2>
+      <div id="lineList"></div>
+    </div>
+
+    <div class="panel">
+      <details>
+        <summary>Create or extend a collection (paste PGN)</summary>
+        <div style="margin-top:12px">
+          <input type="text" id="impName" placeholder="New collection name, e.g. Caro-Kann">
+          <select id="impColor"><option value="white">I play White</option><option value="black">I play Black</option></select>
+          <textarea id="impPgn" placeholder="Paste one or more games. Variations (in parentheses) become separate lines.&#10;&#10;1. e4 c6 2. d4 d5 3. Nc3 (3. e5 Bf5) 3... dxe4 *"></textarea>
+          <div class="row">
+            <button id="createBtn">Create new collection</button>
+            <button id="extendBtn" class="secondary">Add to selected collection</button>
+          </div>
+          <div id="impMsg" style="margin-top:8px"><small>Each game, and each variation within a game, becomes its own line.
+            Duplicates and lines that are just the start of a longer line are merged automatically.</small></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <details>
+        <summary>Backup &amp; sync</summary>
+        <div style="margin-top:12px">
+          <p class="muted" style="margin-top:0">Your collections are stored in this browser, on this device only. Export a backup
+            file to keep a copy or to move your lines to another device.</p>
+          <div class="row">
+            <button id="exportBtn">Export backup</button>
+            <button id="importBtn" class="secondary">Import backup…</button>
+            <input type="file" id="importFile" accept=".json,application/json" hidden>
+          </div>
+          <div id="dataMsg"></div>
+          <small id="storageInfo"></small>
+        </div>
+      </details>
+    </div>
+    <small id="version"></small>
+  </div>
+</div>
+<noscript>This app needs JavaScript.</noscript>
+<script src="app.js"></script>
+</body>
+</html>
