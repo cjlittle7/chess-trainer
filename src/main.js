@@ -4,7 +4,7 @@ import * as E from "./engine.js";
 import * as S from "./store.js";
 import * as T from "./trainer.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -83,7 +83,7 @@ async function beginSessionLine() {
 
 async function startSession(ids) {
   if (!ids.length) return setStatus("There are no lines to practice in this collection yet.", "bad");
-  session = { queue: ids, i: 0, results: [] };
+  session = { queue: ids, i: 0, results: [], recorded: new Set() };   // recorded: which lines already have a result (retries don't count twice)
   await beginSessionLine();
 }
 
@@ -161,12 +161,17 @@ function finishLine() {
     $("nextBtn").onclick = startRandom;
     return;
   }
-  session.results.push({ lineId: state.lineId, name: state.name, ...s, skipped: false });
+  if (!session.recorded.has(session.i)) {            // the first attempt is what the final results show
+    session.recorded.add(session.i);
+    session.results.push({ lineId: state.lineId, name: state.name, ...s, skipped: false });
+  }
   const single = session.queue.length === 1;
   const last = session.i === session.queue.length - 1;
-  showResult(`<h2>Line complete</h2>${table}<button id="nextBtn">${
-      single ? "Practice again" : last ? "See collection results" : "Next line →"}</button>`);
+  showResult(`<h2>Line complete</h2>${table}<div class="row"><button id="nextBtn">${
+      single ? "Practice again" : last ? "See collection results" : "Next line →"}</button>${
+      single ? "" : '<button id="retryLineBtn" class="secondary">Retry this line</button>'}</div>`);
   $("nextBtn").onclick = single ? () => startSession(session.queue) : nextLine;
+  if (!single) $("retryLineBtn").onclick = beginSessionLine;
 }
 
 function skipLine() {
