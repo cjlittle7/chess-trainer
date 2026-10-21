@@ -425,3 +425,5 @@ button.exrow:active { background:#2f2c28; }
   button { min-height:44px; }
   button.small { min-height:36px; }
 }
+
+#exCopyMsg.good { color:var(--accent); } #exCopyMsg.bad { color:var(--bad); }

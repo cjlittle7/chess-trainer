@@ -5,7 +5,7 @@ import * as S from "./store.js";
 import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -462,6 +462,41 @@ function exSetHints(on) {
   try { localStorage.setItem("exHints", on ? "on" : "off"); } catch { /* ignore */ }
   const st = explorer;
   if (st?.ex && st.active && !st.busy && st.review == null) exRender(true);
+}
+
+function exUpTo() {                                    // the moves up to the position on the board (viewed move, else the live one)
+  const ex = explorer.ex, n = explorer.review != null ? explorer.review + 1 : ex.moves.length;
+  return { moves: ex.moves.slice(0, n), sans: ex.sans.slice(0, n) };
+}
+
+async function exCopyPgn() {
+  const st = explorer;
+  if (!st?.ex) return;
+  const { sans } = exUpTo();
+  const text = `[Event "Opening explorer"]\n[Site "mychesstrainer.net"]\n[Result "*"]\n\n${sans.length ? E.sanLine(sans) + " " : ""}*\n`;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fall back below */ }
+  if (!ok) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.append(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+  }
+  $("exCopyMsg").textContent = ok ? `Copied ${sans.length} move${sans.length === 1 ? "" : "s"} as PGN. Paste it into chess.com's import.` : "Couldn't copy automatically. Your browser blocked the clipboard.";
+  $("exCopyMsg").className = ok ? "good" : "bad";
+  window.__lastPgn = text;
+}
+
+function exCreateLine() {
+  const st = explorer;
+  if (!st?.ex) return;
+  const { moves } = exUpTo();
+  if (!moves.length) { $("exCopyMsg").textContent = "Play at least one move first."; $("exCopyMsg").className = "bad"; return; }
+  const target = st.colls.find((c) => c.color === st.side) || coll();
+  const side = st.side;
+  openEditor({ moves, targetId: target?.id, orientation: side });
+  setStatus(`Recording a new line from the explorer: ${moves.length} move${moves.length === 1 ? "" : "s"} so far. Keep playing, choose a collection, then Save line.`);
 }
 
 function exChoose(uci) {
@@ -965,6 +1000,8 @@ $("exCancel").onclick = closeExplorer;
 $("exClose").onclick = closeExplorer;
 $("exBack").onclick = exBack;
 $("exReturn").onclick = exReturn;
+$("exCopy").onclick = exCopyPgn;
+$("exNewLine").onclick = exCreateLine;
 $("exMoves").onclick = (e) => { const m = e.target.closest("[data-i]"); if (m) exReview(Number(m.dataset.i)); };
 $("exHintsChk").checked = exHints;
 $("exHintsChk").onchange = () => exSetHints($("exHintsChk").checked);

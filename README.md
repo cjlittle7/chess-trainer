@@ -58,6 +58,8 @@ Press **Opening explorer** in the Collection panel. Choose whether you play Whit
   **Hint** shows the book move.
 - Untick **Show move hints and continued lines** to practise without arrows or line counts (remembered).
 - Tap any move in the sequence to view that position on the board; your explorer line is kept, and **Return to position** brings you back.
+- **Copy PGN** puts the moves up to the position on the board on your clipboard, ready to paste into chess.com's import.
+- **Create line from here** opens the line editor with those moves already entered; keep playing, pick a collection and Save line. (This closes the explorer.)
 - **Back** takes a move back, **Restart** starts again, and a summary appears at the end of each line.
 - Puzzles (custom-position lines) are not used.
 
