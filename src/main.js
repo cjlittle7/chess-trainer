@@ -5,7 +5,7 @@ import * as S from "./store.js";
 import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 
-const VERSION = "1.5.0";
+const VERSION = "1.5.1";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -340,11 +340,14 @@ function exRender(ready) {
     ? `Only one line is left: ${X.testLineName(ex)}. From here it tests you. ` : "";
   ex.switched = false;
   if (t === "choose") {
-    setStatus(`${note}Your opponent has ${opts.length} replies in your lines. Pick one.`);
+    setStatus(`${note}Your opponent has ${opts.length} replies in your lines. Drag one of their pieces, or use the buttons.`);
     $("exInfo").textContent = "";
     $("exChoose").classList.remove("hidden");
     $("exChoices").innerHTML = opts.map((o) => rowHtml(o, "button", ` data-uci="${o.uci}"`)).join("");
     ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "blue" })));
+    const dests = new Map();                           // drag the opponent's piece to pick its reply
+    for (const o of opts) dests.set(o.from, [...(dests.get(o.from) || []), o.to]);
+    ground.set({ movable: { color: v.turn, dests } });
     return;
   }
   // your move
@@ -369,6 +372,11 @@ function rowHtml(o, tag, attrs) {
 function onExplorerMove(from, to) {
   const st = explorer;
   if (!st?.active || st.busy) return;
+  if (X.turn(st.ex) === "choose") {                    // dragging an opponent piece chooses its reply
+    const o = X.options(st.ex).find((x) => x.from === from && x.to === to);
+    if (!o) return exRender(true);
+    return exChoose(o.uci);
+  }
   const wasTest = st.ex.phase === "test";
   const res = X.userMove(st.ex, from, to);
   if (res.error) return showPosition(exView(), { interactive: true }), exShapes();
