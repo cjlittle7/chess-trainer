@@ -5,7 +5,7 @@ import * as S from "./store.js";
 import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 
-const VERSION = "1.7.1";
+const VERSION = "1.8.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,6 +27,24 @@ let session = null;    // { queue:[lineIds], i, results:[] } when practicing in 
 let editor = null;     // the line being recorded: { moves, redo, sans, view, pending, lineId, start }
 let explorer = null;   // the opening explorer: { ex, colls, side, ids, busy, active, stats, missedHere }
 let setup = null;      // the position being set up: { tool, castle, turn, fullmove, carry, valid }
+
+// Which side you play in each collection. Defaults to the colour it was recorded for; your choice is kept for this session.
+const sides = new Map();
+try { for (const [k, v] of Object.entries(JSON.parse(sessionStorage.getItem("playAs") || "{}"))) sides.set(Number(k), v); } catch { /* ignore */ }
+const sideOf = (c) => (c ? (sides.get(c.id) === "white" || sides.get(c.id) === "black" ? sides.get(c.id) : c.color) : "white");
+function setSide(c, side) {
+  if (side === c.color) sides.delete(c.id); else sides.set(c.id, side);
+  try { sessionStorage.setItem("playAs", JSON.stringify(Object.fromEntries(sides))); } catch { /* ignore */ }
+}
+function renderSide() {
+  const c = coll(), side = sideOf(c);
+  $("sideRow").classList.toggle("hidden", !c);
+  for (const k of ["white", "black"]) {
+    const b = $(k === "white" ? "sideWhite" : "sideBlack");
+    b.classList.toggle("secondary", side !== k); b.setAttribute("aria-pressed", String(side === k));
+  }
+  $("sideNote").textContent = c && side !== c.color ? `(recorded for ${c.color})` : "";
+}
 
 const coll = () => S.collection(Number($("repSelect").value));
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -64,6 +82,7 @@ function onUserMove(from, to) {
 async function launch(c, line) {
   exHide();
   hideResult();
+  c = { ...c, color: sideOf(c) };                      // the trainer plays whichever side you chose for this collection
   const b = T.begin(c, line);
   const st = state = { t: b.t, c, busy: true, active: true, missedHere: false, view: b.start,
                        stats: { moves: 0, first: 0, wrong: 0, hints: 0 }, lineId: line?.id, name: line?.name };
@@ -253,7 +272,7 @@ function exHide() {
 function exOpenings(c) { return c.lines.filter((l) => !l.start && l.moves.length).length; }
 
 function exRenderColls(checkedIds) {
-  const side = exSide(), cs = S.collections().filter((c) => c.color === side);
+  const side = exSide(), cs = S.collections().filter((c) => sideOf(c) === side);
   const prev = checkedIds ?? new Set([...document.querySelectorAll("#exColls input:checked")].map((i) => Number(i.value)));
   $("exColls").innerHTML = cs.length ? cs.map((c) => {
     const n = exOpenings(c);
@@ -274,11 +293,11 @@ function openExplorer() {
   state = null; session = null; hideResult(); setProgress("");
   $("hintBtn").disabled = true; $("skipBtn").disabled = true;
   explorer = { setupOpen: true };
-  const c = coll(), side = c?.color || "white";
+  const c = coll(), side = sideOf(c);
   document.querySelector(`input[name="exSide"][value="${side}"]`).checked = true;
   $("exSetup").classList.remove("hidden"); $("exRun").classList.add("hidden");
   $("exPanel").classList.remove("hidden");
-  exRenderColls(new Set(S.collections().filter((x) => x.color === side && (!c || x.id === c.id)).map((x) => x.id)));
+  exRenderColls(new Set(S.collections().filter((x) => sideOf(x) === side && (!c || x.id === c.id)).map((x) => x.id)));
   ground.set({ fen: E.START_BOARD, orientation: side, lastMove: undefined, check: false, movable: { color: undefined, dests: new Map() } });
   ground.setAutoShapes([]);
   setStatus("Choose your side and which collections to explore.");
@@ -493,7 +512,7 @@ function exCreateLine() {
   if (!st?.ex) return;
   const { moves } = exUpTo();
   if (!moves.length) { $("exCopyMsg").textContent = "Play at least one move first."; $("exCopyMsg").className = "bad"; return; }
-  const target = st.colls.find((c) => c.color === st.side) || coll();
+  const target = st.colls.find((c) => sideOf(c) === st.side) || coll();
   const side = st.side;
   openEditor({ moves, targetId: target?.id, orientation: side });
   setStatus(`Recording a new line from the explorer: ${moves.length} move${moves.length === 1 ? "" : "s"} so far. Keep playing, choose a collection, then Save line.`);
@@ -569,11 +588,12 @@ function lineSan(l) {
 function refresh(selectId) {
   const sel = $("repSelect"), prev = sel.value, keepTarget = $("edTarget").value;
   sel.innerHTML = S.collections().map((c) =>
-    `<option value="${c.id}">${esc(c.name)} (${c.color}, ${c.lines.length} line${c.lines.length === 1 ? "" : "s"})</option>`).join("");
+    `<option value="${c.id}">${esc(c.name)} (${sideOf(c)}, ${c.lines.length} line${c.lines.length === 1 ? "" : "s"})</option>`).join("");
   if (selectId != null) sel.value = String(selectId);
   else if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
   renderEditorTargets(selectId != null ? String(selectId) : keepTarget);
   renderLines();
+  renderSide();
   if (setup) renderSetupLines();
   if (explorer?.setupOpen) exRenderColls();
 }
@@ -661,7 +681,7 @@ function editorMsg(text, bad = false) {
 
 function renderEditorTargets(selected) {
   const sel = $("edTarget"), cs = S.collections();
-  sel.innerHTML = cs.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.color})</option>`).join("") +
+  sel.innerHTML = cs.map((c) => `<option value="${c.id}">${esc(c.name)} (${sideOf(c)})</option>`).join("") +
                   '<option value="new">➕ New collection…</option>';
   sel.value = [...sel.options].some((o) => o.value === String(selected)) ? String(selected) : (cs[0] ? String(cs[0].id) : "new");
   syncEditorTarget();
@@ -670,7 +690,7 @@ function renderEditorTargets(selected) {
 function syncEditorTarget() {
   const v = $("edTarget").value;
   $("edNew").classList.toggle("hidden", v !== "new");
-  const color = v === "new" ? $("edNewColor").value : (S.collection(Number(v))?.color || "white");
+  const color = v === "new" ? $("edNewColor").value : sideOf(S.collection(Number(v)));
   if (editor && !editor.start) ground.set({ orientation: color });
 }
 
@@ -991,7 +1011,7 @@ async function showStorage() {
 
 // ------------------------------------------------------------------- wiring
 $("explorerBtn").onclick = openExplorer;
-document.querySelectorAll('input[name="exSide"]').forEach((r) => { r.onchange = () => exRenderColls(new Set(S.collections().filter((c) => c.color === exSide()).map((c) => c.id))); });
+document.querySelectorAll('input[name="exSide"]').forEach((r) => { r.onchange = () => exRenderColls(new Set(S.collections().filter((c) => sideOf(c) === exSide()).map((c) => c.id))); });
 $("exColls").onchange = exUpdateStart;
 $("exAll").onclick = () => { document.querySelectorAll("#exColls input:not(:disabled)").forEach((i) => { i.checked = true; }); exUpdateStart(); };
 $("exNone").onclick = () => { document.querySelectorAll("#exColls input").forEach((i) => { i.checked = false; }); exUpdateStart(); };
@@ -1024,7 +1044,10 @@ $("newCollBtn").onclick = () => {
   $("impName").focus();
   $("impMsg").innerHTML = "<small>Type a name, choose your colour, then press \"Create empty collection\".</small>";
 };
-$("repSelect").onchange = () => { resetTraining(); renderLines(); if (setup) renderSetupLines(); };
+const pickSide = (side) => { const c = coll(); if (!c) return; setSide(c, side); resetTraining(); refresh(c.id); setStatus(`You will play ${side === "white" ? "White" : "Black"} in "${c.name}".`); };
+$("sideWhite").onclick = () => guardEditor() && pickSide("white");
+$("sideBlack").onclick = () => guardEditor() && pickSide("black");
+$("repSelect").onchange = () => { resetTraining(); renderSide(); renderLines(); if (setup) renderSetupLines(); };
 $("exportBtn").onclick = exportBackup;
 $("importBtn").onclick = () => $("importFile").click();
 $("importFile").onchange = async (e) => { await importBackup(e.target.files[0]); e.target.value = ""; };

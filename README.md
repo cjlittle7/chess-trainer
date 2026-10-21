@@ -30,6 +30,12 @@ and works offline. Your collections are stored on your device (IndexedDB); there
 
 Keep `opening-trainer-data.json` out of the repository: it is your personal data and the repo is public.
 
+## Playing the other side
+
+Under the collection menu, **Play as** White/Black switches which side you play in that collection (the lines stay the same). Each
+collection remembers its choice for the rest of the session, including after a reload, and it is used by drills, the explorer and the
+line editor. It resets when you close the app; the colour a collection was recorded for is never changed.
+
 ## Puzzles (custom positions)
 
 A line can start from any position, not just the opening position. Puzzles live in your normal collections.
