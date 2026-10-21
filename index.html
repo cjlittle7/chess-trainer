@@ -37,6 +37,41 @@
 
     <div id="result" class="panel hidden"></div>
 
+    <div id="exPanel" class="panel hidden">
+      <h2>Opening explorer</h2>
+      <div id="exSetup">
+        <p class="muted" style="margin:0 0 10px">Play through your openings move by move. Every move your saved lines play from the
+          current position is shown on the board. Once only one line is left, it tests you as normal.</p>
+        <div class="row" style="margin-bottom:10px">
+          <label><input type="radio" name="exSide" value="white" checked> I play White</label>
+          <label><input type="radio" name="exSide" value="black"> I play Black</label>
+        </div>
+        <div class="row" style="margin-bottom:6px">
+          <span class="muted">Collections to use:</span>
+          <button id="exAll" class="secondary small">Select all</button>
+          <button id="exNone" class="secondary small">Select none</button>
+        </div>
+        <div id="exColls" class="excolls"></div>
+        <div id="exSetupMsg" class="muted" style="margin:8px 0"></div>
+        <div class="row"><button id="exStart">Start exploring</button><button id="exCancel" class="secondary">Cancel</button></div>
+      </div>
+      <div id="exRun" class="hidden">
+        <div id="exMoves" class="exmoves"></div>
+        <div id="exInfo" class="muted"></div>
+        <div id="exHints" class="exlist"></div>
+        <div id="exChoose" class="hidden">
+          <div class="muted" style="margin-bottom:6px">Your opponent could play any of these. Pick one:</div>
+          <div id="exChoices" class="exlist"></div>
+          <button id="exRandom" class="secondary" style="margin-top:8px">Random choice</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="exBack" class="secondary">← Back</button>
+          <button id="exRestart" class="secondary">Restart</button>
+          <button id="exClose" class="secondary">Close explorer</button>
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
       <h2>Collection</h2>
       <select id="repSelect"></select>
@@ -45,6 +80,7 @@
         <button id="randomBtn" class="secondary">Random drill</button>
         <button id="recordBtn" class="secondary">Record a line</button>
         <button id="puzzleBtn" class="secondary">Record a puzzle</button>
+        <button id="explorerBtn" class="secondary">Opening explorer</button>
       </div>
       <label class="check"><input type="checkbox" id="shuffleChk"> Shuffle line order</label>
       <div class="row" style="margin-top:10px"><button id="newCollBtn" class="secondary small">+ New empty collection</button></div>

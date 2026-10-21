@@ -57,6 +57,20 @@ small, .muted { color:var(--muted); }
 .row label { display:flex; gap:4px; align-items:center; }
 .row label input:disabled + * , input:disabled { opacity:.5; }
 
+/* Opening explorer */
+.excolls { max-height:200px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; padding:4px 8px; background:#1a1816; }
+.excolls label { display:flex; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--border); }
+.excolls label:first-child { border-top:0; }
+.excolls label.off { opacity:.45; }
+.exmoves { font-family:ui-monospace, Menlo, monospace; font-size:14px; background:#1a1816; border:1px solid var(--border); border-radius:6px; padding:6px 8px; min-height:34px; margin-bottom:8px; word-break:break-word; }
+.exlist { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.exrow { display:flex; gap:10px; align-items:baseline; padding:8px 10px; background:#1a1816; border:1px solid var(--border); border-radius:8px; text-align:left; color:var(--text); font-weight:400; }
+.exrow .san { font-weight:700; font-size:16px; min-width:56px; }
+.exrow .cnt { color:var(--accent); font-size:13px; white-space:nowrap; }
+.exrow .nm { color:var(--muted); font-size:12px; min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+button.exrow { cursor:pointer; width:100%; }
+button.exrow:active { background:#2f2c28; }
+
 /* Phones: board stays pinned at the top while the controls scroll beneath it. */
 @media (max-width: 760px) {
   .layout { flex-direction:column; flex-wrap:nowrap; gap:10px; padding:0 10px 24px; }

@@ -3,8 +3,9 @@ import { parseFen } from "chessops/fen";
 import * as E from "./engine.js";
 import * as S from "./store.js";
 import * as T from "./trainer.js";
+import * as X from "./explorer.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -24,6 +25,7 @@ let ground;
 let state = null;      // the line being drilled: { t (trainer state), c, busy, active, missedHere, stats, view, lineId, name }
 let session = null;    // { queue:[lineIds], i, results:[] } when practicing in sequence
 let editor = null;     // the line being recorded: { moves, redo, sans, view, pending, lineId, start }
+let explorer = null;   // the opening explorer: { ex, colls, side, ids, busy, active, stats, missedHere }
 let setup = null;      // the position being set up: { tool, castle, turn, fullmove, carry, valid }
 
 const coll = () => S.collection(Number($("repSelect").value));
@@ -54,11 +56,13 @@ function initBoard() {
 function onUserMove(from, to) {
   if (setup) return;                         // free piece moves while setting up a position
   if (editor) return onEditorMove(from, to);
+  if (explorer) return onExplorerMove(from, to);
   return onTrainMove(from, to);
 }
 
 // ------------------------------------------------------- starting training
 async function launch(c, line) {
+  exHide();
   hideResult();
   const b = T.begin(c, line);
   const st = state = { t: b.t, c, busy: true, active: true, missedHere: false, view: b.start,
@@ -140,6 +144,7 @@ async function onTrainMove(from, to) {
 }
 
 function hint() {
+  if (explorer) return exHint();
   const st = state;
   if (!st?.active || st.busy) return;
   const res = T.hint(st.c, st.t);
@@ -223,7 +228,7 @@ function showCollectionSummary() {
 }
 
 function resetTraining() {
-  state = null; session = null;
+  state = null; session = null; exHide();
   hideResult(); setProgress("");
   $("hintBtn").disabled = true; $("skipBtn").disabled = true;
   if (editor || setup) return;           // keep the editor's / setup board as it is
@@ -232,6 +237,229 @@ function resetTraining() {
   ground.setAutoShapes([]);
   setStatus("Choose a collection and press a practice button.");
 }
+
+// ----------------------------------------------------------- opening explorer
+const exSide = () => document.querySelector('input[name="exSide"]:checked').value;
+const exMsg = (t, bad = false) => { const m = $("exSetupMsg"); m.textContent = t; m.style.color = bad ? "var(--bad)" : ""; };
+
+function exHide() {
+  explorer = null;
+  $("exPanel").classList.add("hidden");
+}
+
+function exOpenings(c) { return c.lines.filter((l) => !l.start && l.moves.length).length; }
+
+function exRenderColls(checkedIds) {
+  const side = exSide(), cs = S.collections().filter((c) => c.color === side);
+  const prev = checkedIds ?? new Set([...document.querySelectorAll("#exColls input:checked")].map((i) => Number(i.value)));
+  $("exColls").innerHTML = cs.length ? cs.map((c) => {
+    const n = exOpenings(c);
+    return `<label class="${n ? "" : "off"}"><input type="checkbox" value="${c.id}" ${n && prev.has(c.id) ? "checked" : ""} ${n ? "" : "disabled"}>
+      <span>${esc(c.name)} <span class="muted">(${n} opening${n === 1 ? "" : "s"})</span></span></label>`;
+  }).join("") : `<div class="muted" style="padding:8px 0">You have no collections for ${side === "white" ? "White" : "Black"} yet.</div>`;
+  exUpdateStart();
+}
+
+function exUpdateStart() {
+  const n = document.querySelectorAll("#exColls input:checked").length;
+  $("exStart").disabled = n === 0;
+  exMsg(n ? "" : "Tick at least one collection.");
+}
+
+function openExplorer() {
+  if (!guardEditor()) return;
+  state = null; session = null; hideResult(); setProgress("");
+  $("hintBtn").disabled = true; $("skipBtn").disabled = true;
+  explorer = { setupOpen: true };
+  const c = coll(), side = c?.color || "white";
+  document.querySelector(`input[name="exSide"][value="${side}"]`).checked = true;
+  $("exSetup").classList.remove("hidden"); $("exRun").classList.add("hidden");
+  $("exPanel").classList.remove("hidden");
+  exRenderColls(new Set(S.collections().filter((x) => x.color === side && (!c || x.id === c.id)).map((x) => x.id)));
+  ground.set({ fen: E.START_BOARD, orientation: side, lastMove: undefined, check: false, movable: { color: undefined, dests: new Map() } });
+  ground.setAutoShapes([]);
+  setStatus("Choose your side and which collections to explore.");
+  $("exPanel").scrollIntoView?.({ block: "nearest" });
+}
+
+function exStart() {
+  const ids = [...document.querySelectorAll("#exColls input:checked")].map((i) => Number(i.value));
+  const side = exSide();
+  const colls = S.collections().filter((c) => ids.includes(c.id));
+  let ex;
+  try { ex = X.create(colls, side); } catch (e) { return exMsg(e.message, true); }
+  launchExplorer({ colls, side, ids, ex });
+}
+
+function launchExplorer({ colls, side, ids, ex }) {
+  const stats = explorer?.stats || { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 };
+  explorer = { ex, colls, side, ids, busy: true, active: true, missedHere: false, stats };
+  hideResult();
+  $("exSetup").classList.add("hidden"); $("exRun").classList.remove("hidden"); $("exPanel").classList.remove("hidden");
+  $("hintBtn").disabled = false; $("skipBtn").disabled = true;
+  ground.set({ orientation: side });
+  setProgress(`Opening explorer · ${side === "white" ? "White" : "Black"} · ${colls.length} collection${colls.length === 1 ? "" : "s"}`);
+  exContinue();
+}
+
+function exView() { return E.view(explorer.ex.pos, explorer.ex.last); }
+
+/** Play the opponent's forced moves, then stop at the next decision. */
+async function exContinue() {
+  const st = explorer;
+  if (!st) return;
+  st.busy = true;
+  for (;;) {
+    const t = X.turn(st.ex);
+    if (t === "auto") {
+      exRender(false);
+      await sleep(SPEEDS[speed].delay);
+      if (explorer !== st) return;
+      X.autoReply(st.ex);
+      showPosition(exView(), { interactive: false });
+      continue;
+    }
+    break;
+  }
+  st.busy = false;
+  exRender(true);
+}
+
+function exRender(ready) {
+  const st = explorer, ex = st.ex, t = X.turn(ex);
+  const v = exView();
+  const mine = t === "user";
+  showPosition(v, { interactive: ready && mine });
+  $("exMoves").textContent = ex.moves.length ? E.sanLine(ex.sans) : "Starting position";
+  $("exHints").innerHTML = ""; $("exChoose").classList.add("hidden");
+  $("exBack").disabled = ex.moves.length === 0;
+  if (!ready) return;
+  const opts = X.options(ex);
+  if (t === "done") return exFinish();
+  const note = ex.switched && ex.phase === "test"
+    ? `Only one line is left: ${X.testLineName(ex)}. From here it tests you. ` : "";
+  ex.switched = false;
+  if (t === "choose") {
+    setStatus(`${note}Your opponent has ${opts.length} replies in your lines. Pick one.`);
+    $("exInfo").textContent = "";
+    $("exChoose").classList.remove("hidden");
+    $("exChoices").innerHTML = opts.map((o) => rowHtml(o, "button", ` data-uci="${o.uci}"`)).join("");
+    ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "blue" })));
+    return;
+  }
+  // your move
+  if (ex.phase === "test") {
+    $("exInfo").textContent = `Testing: ${X.testLineName(ex)}`;
+    ground.setAutoShapes([]);
+    setStatus(`${note}Your move: play the book move.`);
+  } else {
+    const n = X.linesLeft(ex);
+    $("exInfo").textContent = `${n} line${n === 1 ? "" : "s"} continue from here. Play one of these moves:`;
+    $("exHints").innerHTML = opts.map((o) => rowHtml(o, "div", "")).join("");
+    ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
+    setStatus(`${note}Your move: ${opts.length} option${opts.length === 1 ? "" : "s"} in your lines.`);
+  }
+}
+
+function rowHtml(o, tag, attrs) {
+  const names = o.names.length > 3 ? o.names.slice(0, 3).join(", ") + ` +${o.names.length - 3}` : o.names.join(", ");
+  return `<${tag} class="exrow"${attrs}><span class="san">${esc(o.san)}</span><span class="cnt">${o.count} line${o.count === 1 ? "" : "s"}</span><span class="nm">${esc(names)}</span></${tag}>`;
+}
+
+function onExplorerMove(from, to) {
+  const st = explorer;
+  if (!st?.active || st.busy) return;
+  const wasTest = st.ex.phase === "test";
+  const res = X.userMove(st.ex, from, to);
+  if (res.error) return showPosition(exView(), { interactive: true }), exShapes();
+  if (!res.correct) {
+    st.stats.wrong++; st.missedHere = true;
+    showPosition(exView(), { interactive: true }); exShapes();
+    setStatus(wasTest ? "Not the book move. Try again, or press Hint."
+                      : "That move isn't in your selected lines. Pick one of the highlighted moves.", "bad");
+    return;
+  }
+  if (res.wasTest) { st.stats.tested++; if (!st.missedHere) st.stats.first++; } else st.stats.explored++;
+  st.missedHere = false;
+  setStatus(`Correct: ${res.san}`, "good");
+  showPosition(exView(), { interactive: false });
+  exContinue();
+}
+
+function exShapes() {                                  // keep the arrows on after a snap-back
+  const ex = explorer.ex;
+  if (ex.phase === "explore" && X.turn(ex) === "user")
+    ground.setAutoShapes(X.options(ex).map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
+}
+
+function exHint() {
+  const st = explorer;
+  if (!st?.active || st.busy) return;
+  const h = X.hint(st.ex);
+  if (!h) return setStatus("All your options are already shown: the arrows are the moves in your lines.");
+  st.stats.hints++;
+  ground.setAutoShapes([{ orig: h.from, dest: h.to, brush: "green" }]);
+  setStatus(`Hint: ${h.san}`);
+}
+
+function exChoose(uci) {
+  const st = explorer;
+  if (!st?.active || st.busy) return;
+  const r = uci ? X.choose(st.ex, uci) : X.chooseRandom(st.ex);
+  if (!r) return;
+  setStatus(`Opponent plays ${r.san}.`);
+  showPosition(exView(), { interactive: false });
+  exContinue();
+}
+
+function exBack() {
+  const st = explorer;
+  if (!st?.ex || st.busy || !st.ex.moves.length) return;
+  const moves = st.ex.moves.slice();
+  moves.pop();
+  let ex = X.replay(st.colls, st.side, moves);
+  while (moves.length && X.turn(ex) === "auto") { moves.pop(); ex = X.replay(st.colls, st.side, moves); }
+  ex.switched = false;
+  st.ex = ex; st.active = true; st.missedHere = false;
+  hideResult();
+  $("hintBtn").disabled = false;
+  exContinue();
+}
+
+function exRestart() {
+  const st = explorer;
+  if (!st?.colls) return;
+  let ex;
+  try { ex = X.create(st.colls, st.side); } catch (e) { return setStatus(e.message, "bad"); }
+  launchExplorer({ colls: st.colls, side: st.side, ids: st.ids, ex });
+}
+
+function exFinish() {
+  const st = explorer, ex = st.ex, s = st.stats;
+  st.active = false;
+  lockBoard();
+  ground.setAutoShapes([]);
+  $("exInfo").textContent = "";
+  const ended = X.endedLines(ex);
+  const names = [...new Set(ended.map((e) => e.name))];
+  setStatus(names.length ? `End of the line: ${names.join(" / ")}` : "End of the line.", "good");
+  showResult(`<h2>Explorer: line complete</h2>
+    <div class="muted" style="margin-bottom:8px">${esc(E.sanLine(ex.sans))}</div>
+    <table class="stats">
+      <tr><td>Moves explored</td><td>${s.explored}</td></tr>
+      <tr><td>Moves tested</td><td>${s.tested}</td></tr>
+      <tr><td>Tested moves right first time</td><td>${s.first}</td></tr>
+      <tr><td>Wrong attempts</td><td>${s.wrong}</td></tr>
+      <tr><td>Hints used</td><td>${s.hints}</td></tr></table>
+    <div class="row"><button id="exAgain">Explore again</button>
+      <button id="exSettings" class="secondary">Change settings</button>
+      <button id="exDone" class="secondary">Close explorer</button></div>`);
+  $("exAgain").onclick = () => { st.stats = { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 }; explorer = st; exRestart(); };
+  $("exSettings").onclick = openExplorer;
+  $("exDone").onclick = closeExplorer;
+}
+
+function closeExplorer() { exHide(); resetTraining(); }
 
 // ------------------------------------------------------ collections & lines
 const sanCache = new Map();
@@ -250,6 +478,7 @@ function refresh(selectId) {
   renderEditorTargets(selectId != null ? String(selectId) : keepTarget);
   renderLines();
   if (setup) renderSetupLines();
+  if (explorer?.setupOpen) exRenderColls();
 }
 
 function renderLines() {
@@ -350,7 +579,7 @@ function syncEditorTarget() {
 
 function openEditor({ lineId = null, moves = [], name = "", targetId = coll()?.id, start = null, orientation } = {}) {
   if (!guardEditor()) return;
-  state = null; session = null; hideResult(); setProgress("");
+  state = null; session = null; exHide(); hideResult(); setProgress("");
   $("hintBtn").disabled = true; $("skipBtn").disabled = true;
   editor = { moves: [], redo: [], sans: [], view: null, pending: null, lineId, start: start || null };
   $("edStartRow").classList.toggle("hidden", !start);
@@ -506,7 +735,7 @@ function loadSetupFen(fen) {
 }
 
 function enterSetup({ fen = E.START_FEN, carry = {}, orientation = "white" } = {}) {
-  state = null; session = null; editor = null; hideResult(); setProgress("");
+  state = null; session = null; editor = null; exHide(); hideResult(); setProgress("");
   $("hintBtn").disabled = true; $("skipBtn").disabled = true;
   $("editorPanel").classList.add("hidden"); $("edPromo").classList.add("hidden");
   $("setupPanel").classList.remove("hidden");
@@ -664,6 +893,18 @@ async function showStorage() {
 }
 
 // ------------------------------------------------------------------- wiring
+$("explorerBtn").onclick = openExplorer;
+document.querySelectorAll('input[name="exSide"]').forEach((r) => { r.onchange = () => exRenderColls(new Set(S.collections().filter((c) => c.color === exSide()).map((c) => c.id))); });
+$("exColls").onchange = exUpdateStart;
+$("exAll").onclick = () => { document.querySelectorAll("#exColls input:not(:disabled)").forEach((i) => { i.checked = true; }); exUpdateStart(); };
+$("exNone").onclick = () => { document.querySelectorAll("#exColls input").forEach((i) => { i.checked = false; }); exUpdateStart(); };
+$("exStart").onclick = exStart;
+$("exCancel").onclick = closeExplorer;
+$("exClose").onclick = closeExplorer;
+$("exBack").onclick = exBack;
+$("exRestart").onclick = () => { if (explorer) { explorer.stats = { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 }; exRestart(); } };
+$("exRandom").onclick = () => exChoose(null);
+$("exChoices").onclick = (e) => { const b = e.target.closest("[data-uci]"); if (b) exChoose(b.dataset.uci); };
 $("hintBtn").onclick = hint;
 $("speedSel").onchange = () => applySpeed($("speedSel").value);
 $("skipBtn").onclick = skipLine;
