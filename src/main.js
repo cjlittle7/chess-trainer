@@ -4,10 +4,21 @@ import * as E from "./engine.js";
 import * as S from "./store.js";
 import * as T from "./trainer.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// How quickly the opponent replies: pause before the reply, and move animation length (ms).
+const SPEEDS = { normal: { delay: 550, anim: 220 }, fast: { delay: 150, anim: 110 }, instant: { delay: 0, anim: 0 } };
+let speed = "fast";
+try { const saved = localStorage.getItem("opponentSpeed"); if (SPEEDS[saved]) speed = saved; } catch { /* storage unavailable */ }
+function applySpeed(name) {
+  speed = SPEEDS[name] ? name : "fast";
+  $("speedSel").value = speed;
+  ground.set({ animation: { enabled: SPEEDS[speed].anim > 0, duration: SPEEDS[speed].anim || 1 } });
+  try { localStorage.setItem("opponentSpeed", speed); } catch { /* ignore */ }
+}
 
 let ground;
 let state = null;      // the line being drilled: { t (trainer state), c, busy, active, missedHere, stats, view, lineId, name }
@@ -54,7 +65,7 @@ async function launch(c, line) {
                        stats: { moves: 0, first: 0, wrong: 0, hints: 0 }, lineId: line?.id, name: line?.name };
   ground.set({ orientation: b.orientation });
   showPosition(b.start, { interactive: false });
-  if (b.opponent) { await sleep(500); if (state !== st) return; }      // you play Black: White opens
+  if (b.opponent) { await sleep(SPEEDS[speed].delay); if (state !== st) return; }      // you play Black: White opens
   st.view = b.position;
   showPosition(b.position, { interactive: !b.finished });
   st.busy = false;
@@ -119,7 +130,7 @@ async function onTrainMove(from, to) {
   setStatus(`Correct: ${res.san}`, "good");
   showPosition(res.afterUser, { interactive: false });
   if (res.opponent) {
-    await sleep(550);
+    await sleep(SPEEDS[speed].delay);
     if (state !== st) return;
   }
   st.view = res.position;
@@ -654,6 +665,7 @@ async function showStorage() {
 
 // ------------------------------------------------------------------- wiring
 $("hintBtn").onclick = hint;
+$("speedSel").onchange = () => applySpeed($("speedSel").value);
 $("skipBtn").onclick = skipLine;
 $("allBtn").onclick = () => guardEditor() && practiceAll();
 $("randomBtn").onclick = () => guardEditor() && startRandom();
@@ -698,6 +710,7 @@ $("edNewColor").onchange = syncEditorTarget;
 async function main() {
   initBoard();
   buildPalette();
+  applySpeed(speed);
   $("version").textContent = `Opening Trainer v${VERSION}`;
   await S.load();
   refresh();
