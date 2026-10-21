@@ -5,7 +5,7 @@ import * as S from "./store.js";
 import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 
-const VERSION = "1.7.0";
+const VERSION = "1.7.1";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
