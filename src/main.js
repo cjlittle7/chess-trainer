@@ -5,7 +5,7 @@ import * as S from "./store.js";
 import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 
-const VERSION = "1.5.1";
+const VERSION = "1.6.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -242,6 +242,9 @@ function resetTraining() {
 const exSide = () => document.querySelector('input[name="exSide"]:checked').value;
 const exMsg = (t, bad = false) => { const m = $("exSetupMsg"); m.textContent = t; m.style.color = bad ? "var(--bad)" : ""; };
 
+let exHints = true;
+try { exHints = localStorage.getItem("exHints") !== "off"; } catch { /* ignore */ }
+
 function exHide() {
   explorer = null;
   $("exPanel").classList.add("hidden");
@@ -330,9 +333,12 @@ function exRender(ready) {
   const v = exView();
   const mine = t === "user";
   showPosition(v, { interactive: ready && mine });
-  $("exMoves").textContent = ex.moves.length ? E.sanLine(ex.sans) : "Starting position";
+  st.review = null;
+  $("exReturn").classList.add("hidden");
+  $("exMoves").innerHTML = ex.moves.length ? ex.sans.map((m, i) =>
+    `${i % 2 === 0 ? `<span class="num">${i / 2 + 1}.</span> ` : ""}<span class="mv" data-i="${i}">${esc(m)}</span> `).join("") : "Starting position";
+  $("exBack").disabled = ex.moves.length === 0; $("exRandom").disabled = false;
   $("exHints").innerHTML = ""; $("exChoose").classList.add("hidden");
-  $("exBack").disabled = ex.moves.length === 0;
   if (!ready) return;
   const opts = X.options(ex);
   if (t === "done") return exFinish();
@@ -344,7 +350,7 @@ function exRender(ready) {
     $("exInfo").textContent = "";
     $("exChoose").classList.remove("hidden");
     $("exChoices").innerHTML = opts.map((o) => rowHtml(o, "button", ` data-uci="${o.uci}"`)).join("");
-    ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "blue" })));
+    ground.setAutoShapes(exHints ? opts.map((o) => ({ orig: o.from, dest: o.to, brush: "blue" })) : []);
     const dests = new Map();                           // drag the opponent's piece to pick its reply
     for (const o of opts) dests.set(o.from, [...(dests.get(o.from) || []), o.to]);
     ground.set({ movable: { color: v.turn, dests } });
@@ -357,21 +363,28 @@ function exRender(ready) {
     setStatus(`${note}Your move: play the book move.`);
   } else {
     const n = X.linesLeft(ex);
-    $("exInfo").textContent = `${n} line${n === 1 ? "" : "s"} continue from here. Play one of these moves:`;
-    $("exHints").innerHTML = opts.map((o) => rowHtml(o, "div", "")).join("");
-    ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
-    setStatus(`${note}Your move: ${opts.length} option${opts.length === 1 ? "" : "s"} in your lines.`);
+    if (exHints) {
+      $("exInfo").textContent = `${n} line${n === 1 ? "" : "s"} continue from here. Play one of these moves:`;
+      $("exHints").innerHTML = opts.map((o) => rowHtml(o, "div", "")).join("");
+      ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
+      setStatus(`${note}Your move: ${opts.length} option${opts.length === 1 ? "" : "s"} in your lines.`);
+    } else {
+      $("exInfo").textContent = "Hints are off.";
+      ground.setAutoShapes([]);
+      setStatus(`${note}Your move. Hints are off: play a move from your lines.`);
+    }
   }
 }
 
 function rowHtml(o, tag, attrs) {
+  if (!exHints) return `<${tag} class="exrow"${attrs}><span class="san">${esc(o.san)}</span></${tag}>`;
   const names = o.names.length > 3 ? o.names.slice(0, 3).join(", ") + ` +${o.names.length - 3}` : o.names.join(", ");
   return `<${tag} class="exrow"${attrs}><span class="san">${esc(o.san)}</span><span class="cnt">${o.count} line${o.count === 1 ? "" : "s"}</span><span class="nm">${esc(names)}</span></${tag}>`;
 }
 
 function onExplorerMove(from, to) {
   const st = explorer;
-  if (!st?.active || st.busy) return;
+  if (!st?.active || st.busy || st.review != null) return;
   if (X.turn(st.ex) === "choose") {                    // dragging an opponent piece chooses its reply
     const o = X.options(st.ex).find((x) => x.from === from && x.to === to);
     if (!o) return exRender(true);
@@ -396,13 +409,19 @@ function onExplorerMove(from, to) {
 
 function exShapes() {                                  // keep the arrows on after a snap-back
   const ex = explorer.ex;
-  if (ex.phase === "explore" && X.turn(ex) === "user")
+  if (exHints && ex.phase === "explore" && X.turn(ex) === "user")
     ground.setAutoShapes(X.options(ex).map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
 }
 
 function exHint() {
   const st = explorer;
   if (!st?.active || st.busy) return;
+  if (st.review != null) return;
+  if (!exHints && st.ex.phase === "explore" && X.turn(st.ex) === "user") {
+    st.stats.hints++;
+    ground.setAutoShapes(X.options(st.ex).map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
+    return setStatus("Hint: the moves in your lines are shown.");
+  }
   const h = X.hint(st.ex);
   if (!h) return setStatus("All your options are already shown: the arrows are the moves in your lines.");
   st.stats.hints++;
@@ -410,9 +429,44 @@ function exHint() {
   setStatus(`Hint: ${h.san}`);
 }
 
+function exReview(i) {
+  const st = explorer;
+  if (!st?.ex || st.busy || i < 0 || i >= st.ex.moves.length) return;
+  if (i === st.ex.moves.length - 1 && st.review == null) return;        // already looking at the live position
+  if (i === st.ex.moves.length - 1) return exReturn();
+  if (st.review == null) st.savedStatus = [$("status").textContent, $("status").className];
+  st.review = i;
+  const moves = st.ex.moves.slice(0, i + 1);
+  const r = E.replay(moves);
+  showPosition(E.view(r.pos, moves[i]), { interactive: false });
+  ground.setAutoShapes([]);
+  $("exMoves").querySelectorAll(".mv").forEach((m) => m.classList.toggle("cur", Number(m.dataset.i) === i));
+  $("exReturn").classList.remove("hidden");
+  $("exBack").disabled = true; $("exRandom").disabled = true;
+  setStatus(`Viewing the position after move ${Math.floor(i / 2) + 1}${i % 2 ? "..." : "."} ${st.ex.sans[i]}. Your explorer line is saved.`);
+}
+
+function exReturn() {
+  const st = explorer;
+  if (!st || st.review == null) return;
+  st.review = null;
+  $("exReturn").classList.add("hidden");
+  $("exMoves").querySelectorAll(".mv.cur").forEach((m) => m.classList.remove("cur"));
+  $("exBack").disabled = st.ex.moves.length === 0; $("exRandom").disabled = false;
+  if (st.active) exRender(true);
+  else { showPosition(exView(), { interactive: false }); if (st.savedStatus) setStatus(...st.savedStatus); }
+}
+
+function exSetHints(on) {
+  exHints = on;
+  try { localStorage.setItem("exHints", on ? "on" : "off"); } catch { /* ignore */ }
+  const st = explorer;
+  if (st?.ex && st.active && !st.busy && st.review == null) exRender(true);
+}
+
 function exChoose(uci) {
   const st = explorer;
-  if (!st?.active || st.busy) return;
+  if (!st?.active || st.busy || st.review != null) return;
   const r = uci ? X.choose(st.ex, uci) : X.chooseRandom(st.ex);
   if (!r) return;
   setStatus(`Opponent plays ${r.san}.`);
@@ -422,7 +476,7 @@ function exChoose(uci) {
 
 function exBack() {
   const st = explorer;
-  if (!st?.ex || st.busy || !st.ex.moves.length) return;
+  if (!st?.ex || st.busy || st.review != null || !st.ex.moves.length) return;
   const moves = st.ex.moves.slice();
   moves.pop();
   let ex = X.replay(st.colls, st.side, moves);
@@ -910,6 +964,10 @@ $("exStart").onclick = exStart;
 $("exCancel").onclick = closeExplorer;
 $("exClose").onclick = closeExplorer;
 $("exBack").onclick = exBack;
+$("exReturn").onclick = exReturn;
+$("exMoves").onclick = (e) => { const m = e.target.closest("[data-i]"); if (m) exReview(Number(m.dataset.i)); };
+$("exHintsChk").checked = exHints;
+$("exHintsChk").onchange = () => exSetHints($("exHintsChk").checked);
 $("exRestart").onclick = () => { if (explorer) { explorer.stats = { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 }; exRestart(); } };
 $("exRandom").onclick = () => exChoose(null);
 $("exChoices").onclick = (e) => { const b = e.target.closest("[data-uci]"); if (b) exChoose(b.dataset.uci); };

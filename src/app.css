@@ -68,6 +68,10 @@ small, .muted { color:var(--muted); }
 .exrow .san { font-weight:700; font-size:16px; min-width:56px; }
 .exrow .cnt { color:var(--accent); font-size:13px; white-space:nowrap; }
 .exrow .nm { color:var(--muted); font-size:12px; min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#exMoves .mv { cursor:pointer; padding:1px 4px; border-radius:4px; }
+#exMoves .mv:hover { background:#3a3631; }
+#exMoves .mv.cur { background:var(--accent); color:#10140a; }
+#exMoves .num { color:var(--muted); margin-left:4px; }
 button.exrow { cursor:pointer; width:100%; }
 button.exrow:active { background:#2f2c28; }
 

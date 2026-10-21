@@ -56,6 +56,8 @@ Press **Opening explorer** in the Collection panel. Choose whether you play Whit
   by dragging one of the opponent's pieces on the board, or with the buttons / **Random choice**.
 - As soon as only one line is left, the explorer tests you like a normal drill: no arrows, wrong moves snap back,
   **Hint** shows the book move.
+- Untick **Show move hints and continued lines** to practise without arrows or line counts (remembered).
+- Tap any move in the sequence to view that position on the board; your explorer line is kept, and **Return to position** brings you back.
 - **Back** takes a move back, **Restart** starts again, and a summary appears at the end of each line.
 - Puzzles (custom-position lines) are not used.
 
