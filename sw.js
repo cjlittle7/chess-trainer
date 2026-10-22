@@ -1,6 +1,6 @@
 // Offline support. Files are served from the cache first and refreshed in the background,
 // so an update shows up the second time you open the app. Bump CACHE if you add or rename files.
-const CACHE = "opening-trainer-v18";
+const CACHE = "opening-trainer-v17";
 const FILES = ["./", "./index.html", "./style.css", "./app.js", "./manifest.webmanifest",
                "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"];
 

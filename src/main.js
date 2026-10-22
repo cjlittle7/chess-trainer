@@ -6,7 +6,7 @@ import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
 
-const VERSION = "2.5.0";
+const VERSION = "2.4.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -24,7 +24,7 @@ function applySpeed(name) {
 }
 
 // ---- themes: a class on <body> picks the board colours and the piece set (kept on this device)
-const THEMES = { board: ["brown", "green", "blue", "gray", "purple", "night"], pieces: ["classic", "merida", "chessnut", "rhosgfx", "celtic", "barnes"] };
+const THEMES = { board: ["brown", "green", "blue", "gray", "purple", "night"], pieces: ["classic", "merida", "chessnut", "rhosgfx", "celtic"] };
 function applyTheme(board, pieces) {
   if (!THEMES.board.includes(board)) board = "brown";
   if (!THEMES.pieces.includes(pieces)) pieces = "classic";
