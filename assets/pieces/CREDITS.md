@@ -9,3 +9,4 @@ Piece artwork comes from the Lichess project (https://github.com/lichess-org/lil
 | Chessnut | chessnut | Alexis Luengas | Apache 2.0 |
 | Modern | rhosgfx | RhosGFX | CC0 1.0 |
 | Celtic | celtic | Maurizio Monge (chess-art) | MIT |
+| Barnes (custom) | barnes | Custom piece images supplied by the app owner | Personal artwork, not for redistribution |

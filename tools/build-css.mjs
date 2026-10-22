@@ -19,10 +19,12 @@ for (const [name, [light, dark]] of Object.entries(BOARDS)) {
 // Extra piece sets (see assets/pieces/CREDITS.md): class "pcs-<name>" on <body>.
 const ROLES = { K: "king", Q: "queen", R: "rook", B: "bishop", N: "knight", P: "pawn" };
 css += "\n/* piece sets */\n";
+const MIME = { svg: "image/svg+xml", webp: "image/webp", png: "image/png" };
 for (const set of fs.readdirSync("assets/pieces").filter((d) => fs.statSync("assets/pieces/" + d).isDirectory())) {
   for (const [letter, role] of Object.entries(ROLES)) for (const [c, color] of [["w", "white"], ["b", "black"]]) {
-    const b64 = fs.readFileSync(`assets/pieces/${set}/${c}${letter}.svg`).toString("base64");
-    css += `body.pcs-${set} .cg-wrap piece.${role}.${color} { background-image:url('data:image/svg+xml;base64,${b64}'); }\n`;
+    const ext = Object.keys(MIME).find((e) => fs.existsSync(`assets/pieces/${set}/${c}${letter}.${e}`));
+    const b64 = fs.readFileSync(`assets/pieces/${set}/${c}${letter}.${ext}`).toString("base64");
+    css += `body.pcs-${set} .cg-wrap piece.${role}.${color} { background-image:url('data:${MIME[ext]};base64,${b64}'); }\n`;
   }
 }
 fs.writeFileSync("style.css", css);

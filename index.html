@@ -14,7 +14,11 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="layout">
+<nav class="tabs" id="tabs">
+  <button id="tabTrain" class="tab active" aria-pressed="true">Trainer</button>
+  <button id="tabStudy" class="tab" aria-pressed="false">STUDY BREAK</button>
+</nav>
+<div class="layout" id="trainerView">
   <div class="board-col"><div id="board" class="cg-wrap"></div></div>
 
   <div class="side-col">
@@ -220,7 +224,7 @@
             <option value="gray">Gray</option><option value="purple">Purple</option><option value="night">Night</option></select>
           <label class="muted" for="themePieces">Pieces</label>
           <select id="themePieces"><option value="classic">Classic</option><option value="merida">Merida</option><option value="chessnut">Chessnut</option>
-            <option value="rhosgfx">Modern</option><option value="celtic">Celtic</option></select>
+            <option value="rhosgfx">Modern</option><option value="celtic">Celtic</option><option value="barnes">Barnes (custom)</option></select>
           <small>Piece artwork credits: see the README.</small>
         </div>
       </details>
@@ -280,7 +284,20 @@
     <small id="version"></small>
   </div>
 </div>
+<div id="studyView" class="study hidden">
+  <h1>Study break</h1>
+  <p class="muted">Take a breather. Press the button.</p>
+  <div class="stage" id="studyStage">
+    <img src="assets/study/photo.jpg" alt="A chess player resting his head on his hand" width="465" height="495" draggable="false">
+    <div id="studyOverlay" class="overlay" aria-hidden="true"></div>
+  </div>
+  <button id="tomatoBtn" class="tomato-btn">TOMATO</button>
+  <div id="tomatoCount" class="tomato-count" aria-live="polite"></div>
+  <small id="tomatoNote" class="muted"></small>
+  <button id="studyExit" class="secondary" style="margin-top:14px">Exit study break</button>
+</div>
 <noscript>This app needs JavaScript.</noscript>
+<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

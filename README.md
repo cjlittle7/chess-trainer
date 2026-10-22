@@ -116,7 +116,8 @@ is opened; change `CACHE` in `sw.js` if you add or rename files.
 
 Open **Appearance** to pick a board colour and a piece set (saved on this device). Piece sets: Classic (Colin M.L. Burnett, GPLv2+), Merida
 (Armando Hernandez Marroquin, GPLv2+), Chessnut (Alexis Luengas, Apache 2.0), Modern (RhosGFX, CC0) and Celtic (Maurizio Monge, MIT),
-all taken from the Lichess project. See `assets/pieces/CREDITS.md`.
+all taken from the Lichess project. **Barnes (custom)** is a set made from your own photos (`assets/pieces/barnes`, one image per piece; replace
+the files and rebuild to change it). See `assets/pieces/CREDITS.md`.
 
 Explorer arrows are weighted by popularity: the more games (or lines) play a move, the thicker and more opaque its arrow, on a
 logarithmic scale relative to the most-played move (a move played 10 times less than the top move gets half the weight, 100 times less
@@ -126,3 +127,19 @@ gets the minimum).
 
 The app bundles chessops and Chessground, both GPL-3.0-or-later. Publishing the source in your public repo, as above,
 is how that licence expects it to be shared.
+
+## Study break (tomato page)
+
+The **STUDY BREAK** tab shows a photo and a **TOMATO** button. Each press plays the tomato GIF over the photo; when it finishes, its last frame stays on the picture until you leave the tab. The worldwide counter adds up every press from every visitor.
+
+A static website can't store a shared number by itself, so the counter needs a tiny free service. Until you set it up, the page counts presses on that device only and says so.
+
+### Turning on the worldwide counter (Cloudflare, free, about 5 minutes)
+1. Make a free account at cloudflare.com. In the dashboard open **Storage & databases → KV** and create a namespace named `tomatoes`.
+2. Open **Workers & Pages → Create → Hello World**, name it (e.g. `tomato-counter`), click **Deploy**, then **Edit code**. Replace everything with the contents of `tools/tomato-counter-worker.js` and **Deploy**.
+3. In the worker's **Settings → Bindings → Add → KV namespace**, set the variable name to exactly `COUNTER` and choose `tomatoes`.
+4. Copy the worker's address (like `https://tomato-counter.yourname.workers.dev`) into `config.js` as `tomatoCounterUrl`, upload `config.js` to GitHub, and reopen the app twice.
+
+The worker only accepts throws from mychesstrainer.net, www.mychesstrainer.net and cjlittle7.github.io (edit `DEFAULT_ORIGINS`, or add an `ALLOWED_ORIGINS` variable, to change that). Presses made offline are saved and sent when the phone is back online. Because Cloudflare KV isn't atomic, a few presses made in the very same instant by different people can be lost; that is fine for a toy counter.
+
+Replace `assets/study/photo.jpg` to change the picture; make sure you have the right to use it.

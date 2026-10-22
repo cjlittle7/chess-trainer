@@ -6,7 +6,7 @@ import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
 
-const VERSION = "2.4.0";
+const VERSION = "2.6.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -24,7 +24,7 @@ function applySpeed(name) {
 }
 
 // ---- themes: a class on <body> picks the board colours and the piece set (kept on this device)
-const THEMES = { board: ["brown", "green", "blue", "gray", "purple", "night"], pieces: ["classic", "merida", "chessnut", "rhosgfx", "celtic"] };
+const THEMES = { board: ["brown", "green", "blue", "gray", "purple", "night"], pieces: ["classic", "merida", "chessnut", "rhosgfx", "celtic", "barnes"] };
 function applyTheme(board, pieces) {
   if (!THEMES.board.includes(board)) board = "brown";
   if (!THEMES.pieces.includes(pieces)) pieces = "classic";
@@ -1294,6 +1294,75 @@ async function showStorage() {
   $("storageInfo").textContent = txt;
 }
 
+// ------------------------------------------------------------- study break
+const TOMATO_GIF = "assets/study/tomato.gif", TOMATO_LAST = "assets/study/tomato-last.png";
+const TOMATO_MS = 7400;                               // the GIF lasts 7.6 s; the still of its last frame takes over just before it ends
+const TOMATO_SPREAD = 0.2;                            // each throw lands a little differently (fraction of the picture's width); 0 = always the same spot
+const counterUrl = () => ((window.APP_CONFIG && window.APP_CONFIG.tomatoCounterUrl) || "").replace(/\/+$/, "");
+const lsGet = (k, d) => { try { const v = parseInt(localStorage.getItem(k), 10); return Number.isFinite(v) ? v : d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, String(v)); } catch { /* ignore */ } };
+const tomato = { server: lsGet("tomatoServer", null), pending: lsGet("tomatoPending", 0), device: lsGet("tomatoDevice", 0), flushing: false, timer: null, thrown: 0 };
+
+function renderTomatoCount() {
+  const el = $("tomatoCount"), url = counterUrl();
+  if (url) {
+    el.textContent = tomato.server == null && !tomato.pending ? "Tomatoes thrown worldwide: …"
+      : `Tomatoes thrown worldwide: ${((tomato.server || 0) + tomato.pending).toLocaleString()}`;
+    $("tomatoNote").textContent = tomato.pending ? "Syncing your latest throws…" : "";
+  } else {
+    el.textContent = `Tomatoes thrown on this device: ${tomato.device.toLocaleString()}`;
+    $("tomatoNote").textContent = "The worldwide counter isn't connected yet (see the README).";
+  }
+}
+
+async function tomatoRequest(path, init) {
+  const r = await fetch(counterUrl() + path, init);
+  if (!r.ok) throw new Error("counter " + r.status);
+  const j = await r.json();
+  if (!Number.isFinite(j.count)) throw new Error("bad counter reply");
+  return j.count;
+}
+
+async function tomatoFlush() {
+  if (!counterUrl() || tomato.flushing) return;
+  tomato.flushing = true;
+  try {
+    if (!tomato.pending) tomato.server = await tomatoRequest("/count");
+    while (tomato.pending > 0) {
+      const n = Math.min(tomato.pending, 20);
+      tomato.server = await tomatoRequest("/hit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n }) });
+      tomato.pending -= n; lsSet("tomatoPending", tomato.pending);
+    }
+    lsSet("tomatoServer", tomato.server);
+  } catch { /* offline or the service is down: keep the pending throws and try again later */ }
+  tomato.flushing = false;
+  renderTomatoCount();
+}
+
+function throwTomato() {
+  const img = document.createElement("img");
+  img.className = "tomato"; img.alt = "";
+  const dx = (Math.random() - 0.5) * 2 * TOMATO_SPREAD, dy = (Math.random() - 0.5) * 2 * TOMATO_SPREAD;
+  img.style.transform = `translate(${(dx * 100).toFixed(1)}%, ${(dy * 100).toFixed(1)}%)`;
+  img.src = `${TOMATO_GIF}?throw=${Date.now()}-${tomato.thrown++}`;       // a fresh address makes the GIF start from its first frame
+  $("studyOverlay").append(img);
+  setTimeout(() => { if (img.isConnected) img.src = TOMATO_LAST; }, TOMATO_MS);   // the last frame stays until you exit
+  tomato.device++; lsSet("tomatoDevice", tomato.device);
+  tomato.pending += counterUrl() ? 1 : 0; lsSet("tomatoPending", tomato.pending);
+  renderTomatoCount();
+  clearTimeout(tomato.timer); tomato.timer = setTimeout(tomatoFlush, 400);
+}
+
+function showTab(which) {
+  const study = which === "study";
+  $("trainerView").classList.toggle("hidden", study);
+  $("studyView").classList.toggle("hidden", !study);
+  $("tabTrain").classList.toggle("active", !study); $("tabStudy").classList.toggle("active", study);
+  $("tabTrain").setAttribute("aria-pressed", String(!study)); $("tabStudy").setAttribute("aria-pressed", String(study));
+  if (study) { renderTomatoCount(); tomatoFlush(); window.scrollTo(0, 0); }
+  else { $("studyOverlay").innerHTML = ""; ground?.redrawAll?.(); }          // leaving the study break clears the tomatoes
+}
+
 // ------------------------------------------------------------------- wiring
 $("libSrc").onchange = () => { const f = $("libSrc").value === "file"; $("libFileRow").classList.toggle("hidden", !f); $("libUserRow").classList.toggle("hidden", f); $("libMax").value = f ? 20000 : 5000; };
 $("libGo").onclick = importLibrary;
@@ -1342,6 +1411,11 @@ $("exHintsChk").onchange = () => exSetHints($("exHintsChk").checked);
 $("exRestart").onclick = () => { if (explorer) { explorer.stats = { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 }; exRestart(); } };
 $("exRandom").onclick = () => exChoose(null);
 $("exChoices").onclick = (e) => { const b = e.target.closest("[data-uci]"); if (b) exChoose(b.dataset.uci); };
+$("tabTrain").onclick = () => showTab("train");
+$("tabStudy").onclick = () => showTab("study");
+$("studyExit").onclick = () => showTab("train");
+$("tomatoBtn").onclick = throwTomato;
+window.addEventListener("online", () => tomatoFlush());
 $("hintBtn").onclick = hint;
 $("themeBoard").onchange = $("themePieces").onchange = () => applyTheme($("themeBoard").value, $("themePieces").value);
 $("speedSel").onchange = () => applySpeed($("speedSel").value);
