@@ -97,3 +97,12 @@ button.exrow:active { background:#2f2c28; }
 .libitem { display:flex; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--border); }
 .libitem:first-child { border-top:0; } .libitem .info { flex:1; min-width:0; } .libitem .name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #libMsg.good { color:var(--accent); } #libMsg.bad { color:var(--bad); }
+
+/* links to the games behind a position */
+a.magn { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; flex:none; border-radius:50%; background:var(--accent); color:#10140a; text-decoration:none; }
+a.magn svg { width:18px; height:18px; }
+.exone { display:flex; gap:10px; align-items:center; padding:8px 10px; margin-top:8px; background:#1a1816; border:1px solid var(--border); border-radius:8px; }
+.exone .txt { flex:1; min-width:0; font-size:14px; }
+.gamerow { display:flex; gap:10px; align-items:center; padding:6px 0; border-top:1px solid var(--border); color:var(--text); font-size:14px; }
+.gamerow .txt { flex:1; min-width:0; } .gamerow .sub { color:var(--muted); font-size:12px; }
+#exGameList { margin-top:8px; max-height:260px; overflow-y:auto; }

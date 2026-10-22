@@ -36,6 +36,7 @@ export function createBuilder(opts = {}) {
   const color = opts.color === "white" || opts.color === "black" ? opts.color : null;
   const tree = new Map();                          // hash -> Map(uci -> [w, d, b])
   const st = { seen: 0, used: 0, skipped: 0, errors: 0 };
+  const info = [], hashes = [], starts = [];       // one entry per game: details, and the numeric hashes of every position it visited
 
   function addGame(game) {
     st.seen++;
@@ -57,13 +58,14 @@ export function createBuilder(opts = {}) {
     if (E.key(pos) !== E.key(E.newPos())) { st.skipped++; return; }              // only games from the standard start
     let node = game.moves, plies = 0;
     const seen = new Set();                                    // a game counts once per position, even if it repeats it
+    const visited = [];
     while (plies < depth && node.children.length) {
       const child = node.children[0];
       const move = parseSan(pos, child.data.san);
       if (!move) { if (plies === 0) st.errors++; break; }
       const k = posHash(pos), uci = E.standardUci(pos.clone(), move);
       if (!seen.has(k)) {
-        seen.add(k);
+        seen.add(k); visited.push(Number(k));
         let m = tree.get(k);
         if (!m) tree.set(k, (m = new Map()));
         let c = m.get(uci);
@@ -77,12 +79,19 @@ export function createBuilder(opts = {}) {
       st.used++;
       const k = posHash(pos);                                   // the game ends here (game over, or the depth limit): count it as having reached this position
       if (!seen.has(k)) {
+        visited.push(Number(k));
         let m = tree.get(k);
         if (!m) tree.set(k, (m = new Map()));
         let c = m.get("");
         if (!c) m.set("", (c = [0, 0, 0]));
         c[ri]++;
       }
+      const link = (h.get("Link") || h.get("Site") || "").trim();
+      let date = (h.get("UTCDate") || h.get("Date") || "").trim();
+      if (!/^\d{4}\.\d{2}\.\d{2}$/.test(date)) date = /^\d{4}\.\?\?\.\?\?$/.test(date) ? date.slice(0, 4) : "";
+      starts.push(hashes.length); for (const v of visited) hashes.push(v);
+      info.push([(h.get("White") || "?").slice(0, 60), (h.get("Black") || "?").slice(0, 60), parseInt(h.get("WhiteElo"), 10) || 0, parseInt(h.get("BlackElo"), 10) || 0,
+                 ri, date, /^https?:\/\/[^\s"'<>]+$/.test(link) ? link : "", (h.get("Event") || "").slice(0, 80)]);
     } else st.skipped++;
   }
 
@@ -96,7 +105,9 @@ export function createBuilder(opts = {}) {
     finish(name, source) {
       const out = {};
       for (const [k, m] of tree) { const a = []; for (const [u, c] of m) a.push(u, c[0], c[1], c[2]); out[k] = a; }
-      return { name, source, color, depth, games: st.used, created: Date.now(), ver: 2, tree: out };
+      starts.push(hashes.length);
+      return { name, source, color, depth, games: st.used, created: Date.now(), ver: 3, tree: out,
+               gameData: { info, hashes: Float64Array.from(hashes), starts: Uint32Array.from(starts) } };
     },
   };
 }
@@ -132,13 +143,18 @@ export function gamesAt(lib, key) {
 
 // ------------------------------------------------------------------ storage
 const openDb = () => new Promise((res, rej) => {
-  const r = indexedDB.open(DB_NAME, 1);
-  r.onupgradeneeded = () => { r.result.createObjectStore("meta", { keyPath: "id" }); r.result.createObjectStore("tree"); };
+  const r = indexedDB.open(DB_NAME, 2);
+  r.onupgradeneeded = () => {
+    const db = r.result;
+    if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "id" });
+    if (!db.objectStoreNames.contains("tree")) db.createObjectStore("tree");
+    if (!db.objectStoreNames.contains("games")) db.createObjectStore("games");
+  };
   r.onsuccess = () => res(r.result);
   r.onerror = () => rej(r.error);
 });
 const wrap = (req) => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
-const treeCache = new Map();
+const treeCache = new Map(), gameCache = new Map();
 
 export async function list() {
   const db = await openDb();
@@ -150,15 +166,16 @@ export async function save(lib) {
   const db = await openDb();
   try {
     const id = lib.id || Date.now() + Math.floor(Math.random() * 1000);
-    const { tree, ...meta } = lib;
+    const { tree, gameData, ...meta } = lib;
     meta.id = id;
     await new Promise((res, rej) => {
-      const tx = db.transaction(["meta", "tree"], "readwrite");
+      const tx = db.transaction(["meta", "tree", "games"], "readwrite");
       tx.objectStore("meta").put(meta);
       tx.objectStore("tree").put(tree, id);
+      if (gameData) tx.objectStore("games").put(gameData, id);
       tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
     });
-    treeCache.set(id, tree);
+    treeCache.set(id, tree); gameCache.delete(id);
     return id;
   } finally { db.close(); }
 }
@@ -179,10 +196,36 @@ export async function remove(id) {
   const db = await openDb();
   try {
     await new Promise((res, rej) => {
-      const tx = db.transaction(["meta", "tree"], "readwrite");
-      tx.objectStore("meta").delete(id); tx.objectStore("tree").delete(id);
+      const tx = db.transaction(["meta", "tree", "games"], "readwrite");
+      tx.objectStore("meta").delete(id); tx.objectStore("tree").delete(id); tx.objectStore("games").delete(id);
       tx.oncomplete = res; tx.onerror = () => rej(tx.error);
     });
-    treeCache.delete(id);
+    treeCache.delete(id); gameCache.delete(id);
   } finally { db.close(); }
+}
+
+/**
+ * The games that reached a position (numeric position hash), newest first.
+ * Returns { total, games: [{ white, black, whiteElo, blackElo, result, date, url, event }] } or null if this library
+ * was imported before game details were saved.
+ */
+export async function findGames(id, hash, limit = 50) {
+  let gd = gameCache.get(id);
+  if (gd === undefined) {
+    const db = await openDb();
+    try { gd = (await wrap(db.transaction("games").objectStore("games").get(id))) || null; } finally { db.close(); }
+    gameCache.set(id, gd);
+  }
+  if (!gd) return null;
+  const found = [];
+  const { hashes, starts, info } = gd;
+  for (let g = 0; g < info.length; g++) {
+    for (let i = starts[g]; i < starts[g + 1]; i++) if (hashes[i] === hash) { found.push(g); break; }
+  }
+  found.sort((a, b) => (info[b][5] || "").localeCompare(info[a][5] || "") || b - a);
+  const RES = ["1-0", "1/2-1/2", "0-1"];
+  return { total: found.length, games: found.slice(0, limit).map((g) => {
+    const [white, black, whiteElo, blackElo, ri, date, url, event] = info[g];
+    return { white, black, whiteElo, blackElo, result: RES[ri], date, url, event };
+  }) };
 }

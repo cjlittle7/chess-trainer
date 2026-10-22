@@ -51,6 +51,10 @@ percentages are White / draw / Black).
 - In the explorer, pick **Game library** as the source. A library made from one colour of your games fixes your side to that colour.
   Opponent replies work as before (drag a piece, buttons, or **Random choice**, which follows how often each reply was played).
   The explorer doesn't switch to testing mode for libraries.
+- **Finding the games:** at a position that only one game reaches, a green magnifying-glass button opens that game on Lichess or
+  chess.com in a new tab. **Games from here** lists the newest 50 games that reached the current position, each with its link. Links come
+  from the game's `Site` (Lichess) or `Link` (chess.com) tag; files without them show just the players, rating, result and date.
+  Libraries made before v2.2.0 need to be deleted and imported again to get this.
 - Games are only used if they have a result and start from the standard position. Libraries live in this browser only and are not part
   of the backup file; re-import them if you move devices.
 
@@ -102,6 +106,15 @@ Press **Opening explorer** in the Collection panel. Choose whether you play Whit
 
 Commit and push the rebuilt `app.js` / `style.css`. (`CNAME` holds your custom domain; leave it in place.) The service worker (`sw.js`) shows updates the second time the app
 is opened; change `CACHE` in `sw.js` if you add or rename files.
+
+## Themes
+
+Open **Appearance** to pick a board colour and a piece set (saved on this device). Piece sets: Classic (Colin M.L. Burnett, GPLv2+), Merida
+(Armando Hernandez Marroquin, GPLv2+), Chessnut (Alexis Luengas, Apache 2.0), Modern (RhosGFX, CC0) and Celtic (Maurizio Monge, MIT),
+all taken from the Lichess project. See `assets/pieces/CREDITS.md`.
+
+Explorer arrows are weighted by popularity: the more games (or lines) play a move, the thicker and more opaque its arrow, on a
+logarithmic scale relative to the most-played move.
 
 ## Licence note
 

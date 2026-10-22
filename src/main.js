@@ -6,7 +6,7 @@ import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
 
-const VERSION = "2.0.1";
+const VERSION = "2.2.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -21,6 +21,39 @@ function applySpeed(name) {
   $("speedSel").value = speed;
   ground.set({ animation: { enabled: SPEEDS[speed].anim > 0, duration: SPEEDS[speed].anim || 1 } });
   try { localStorage.setItem("opponentSpeed", speed); } catch { /* ignore */ }
+}
+
+// ---- themes: a class on <body> picks the board colours and the piece set (kept on this device)
+const THEMES = { board: ["brown", "green", "blue", "gray", "purple", "night"], pieces: ["classic", "merida", "chessnut", "rhosgfx", "celtic"] };
+function applyTheme(board, pieces) {
+  if (!THEMES.board.includes(board)) board = "brown";
+  if (!THEMES.pieces.includes(pieces)) pieces = "classic";
+  const cls = document.body.classList;
+  [...cls].filter((c) => c.startsWith("brd-") || c.startsWith("pcs-")).forEach((c) => cls.remove(c));
+  if (board !== "brown") cls.add("brd-" + board);
+  if (pieces !== "classic") cls.add("pcs-" + pieces);
+  $("themeBoard").value = board; $("themePieces").value = pieces;
+  try { localStorage.setItem("theme", JSON.stringify({ board, pieces })); } catch { /* ignore */ }
+}
+function loadTheme() {
+  let t = {};
+  try { t = JSON.parse(localStorage.getItem("theme") || "{}"); } catch { /* ignore */ }
+  applyTheme(t.board, t.pieces);
+}
+
+// ---- arrows whose weight follows the number of games (logarithmic): more games = thicker and more opaque
+const ARROW_STEPS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+const arrowBrushes = {};
+for (const [name, color] of [["g", "#15781B"], ["b", "#003088"]]) {
+  ARROW_STEPS.forEach((op, i) => { arrowBrushes[`${name}${i}`] = { key: `${name}${i}`, color, opacity: op, lineWidth: 10 }; });
+}
+function weightedArrows(opts, colorName) {
+  const max = Math.max(...opts.map((o) => o.count), 1);
+  return opts.map((o) => {
+    const w = max > 1 ? Math.log(1 + o.count) / Math.log(1 + max) : 1;        // 0..1, relative to the most played move
+    const step = Math.min(ARROW_STEPS.length - 1, Math.round(w * (ARROW_STEPS.length - 1)));
+    return { orig: o.from, dest: o.to, brush: `${colorName}${step}`, modifiers: { lineWidth: Math.round(5 + 11 * w) } };
+  }).sort((a, b) => a.modifiers.lineWidth - b.modifiers.lineWidth);           // thin arrows are drawn last so they stay visible
 }
 
 let ground;
@@ -69,6 +102,7 @@ function initBoard() {
     draggable: { showGhost: true },
     movable: { free: false, showDests: true, color: undefined, events: { after: onUserMove } },
     highlight: { lastMove: true, check: true },
+    drawable: { brushes: arrowBrushes },
   });
   if (location.hash === "#debug") window.__ground = ground;   // lets automated tests inspect the board
 }
@@ -349,6 +383,7 @@ async function exStart() {
 function launchExplorer({ colls, side, ids, ex, lib = null }) {
   const stats = explorer?.stats || { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 };
   explorer = { ex, colls, side, ids, lib, busy: true, active: true, missedHere: false, stats };
+  $("exGames").textContent = "Games from here";
   hideResult();
   $("exSetup").classList.add("hidden"); $("exRun").classList.remove("hidden"); $("exPanel").classList.remove("hidden");
   $("hintBtn").disabled = false; $("skipBtn").disabled = true;
@@ -394,6 +429,7 @@ function exRender(ready) {
   $("exHints").innerHTML = ""; $("exChoose").classList.add("hidden");
   if (!ready) return;
   const opts = X.options(ex);
+  exRefreshGames();
   if (t === "done") return exFinish();
   const note = ex.switched && ex.phase === "test"
     ? `Only one line is left: ${X.testLineName(ex)}. From here it tests you. ` : "";
@@ -403,7 +439,7 @@ function exRender(ready) {
     $("exInfo").textContent = "";
     $("exChoose").classList.remove("hidden");
     $("exChoices").innerHTML = opts.map((o) => rowHtml(o, "button", ` data-uci="${o.uci}"`)).join("");
-    ground.setAutoShapes(exHints ? opts.map((o) => ({ orig: o.from, dest: o.to, brush: "blue" })) : []);
+    ground.setAutoShapes(exHints ? weightedArrows(opts, "b") : []);
     const dests = new Map();                           // drag the opponent's piece to pick its reply
     for (const o of opts) dests.set(o.from, [...(dests.get(o.from) || []), o.to]);
     ground.set({ movable: { color: v.turn, dests } });
@@ -420,7 +456,7 @@ function exRender(ready) {
       $("exInfo").textContent = ex.lib ? `${n.toLocaleString()} game${n === 1 ? "" : "s"} reached this position. Moves played (bar: White wins / draws / Black wins):`
                                        : `${n} line${n === 1 ? "" : "s"} continue from here. Play one of these moves:`;
       $("exHints").innerHTML = opts.map((o) => rowHtml(o, "div", "")).join("");
-      ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
+      ground.setAutoShapes(weightedArrows(opts, "g"));
       setStatus(`${note}Your move: ${opts.length} option${opts.length === 1 ? "" : "s"} in ${ex.lib ? "the games" : "your lines"}.`);
     } else {
       $("exInfo").textContent = "Hints are off.";
@@ -428,6 +464,44 @@ function exRender(ready) {
       setStatus(`${note}Your move. Hints are off: play a move from your lines.`);
     }
   }
+}
+
+// ---- links to the games behind a library position
+const MAGNIFIER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="10" cy="10" r="6.5"/><path d="M15 15l6 6"/></svg>';
+const siteName = (url) => { try { const h = new URL(url).hostname.replace(/^www\./, ""); return h === "lichess.org" ? "Lichess" : h === "chess.com" ? "chess.com" : h; } catch { return "the site"; } };
+const gameTitle = (g) => `${g.white}${g.whiteElo ? ` (${g.whiteElo})` : ""} vs ${g.black}${g.blackElo ? ` (${g.blackElo})` : ""}`;
+const gameSub = (g) => [g.result === "1/2-1/2" ? "½-½" : g.result, g.date, g.event && !/^(rated|casual|live|let's play)/i.test(g.event) ? g.event : ""].filter(Boolean).join(" · ");
+const magnLink = (g) => g.url ? `<a class="magn" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer" title="Open this game on ${esc(siteName(g.url))}" aria-label="Open this game on ${esc(siteName(g.url))}">${MAGNIFIER}</a>` : "";
+
+async function exRefreshGames() {
+  const st = explorer;
+  if (!st?.ex) return;
+  const ex = st.ex, lib = st.lib;
+  $("exGames").classList.toggle("hidden", !lib);
+  if (!lib) { $("exOne").classList.add("hidden"); $("exGameList").classList.add("hidden"); return; }
+  const key = ex.key, n = X.linesLeft(ex), hash = Number(L.hashKey(key));
+  const wantList = !!st.showGames, wantOne = n === 1;
+  $("exOne").classList.add("hidden");
+  if (!wantList && !wantOne) { $("exGameList").classList.add("hidden"); return; }
+  let r;
+  try { r = await L.findGames(lib.id, hash, wantList ? 50 : 1); } catch { r = null; }
+  if (explorer !== st || st.ex.key !== key) return;                    // moved on while loading
+  if (r === null) {
+    const msg = "This library was imported before game links were saved. Delete it and import it again to get them.";
+    if (wantOne) { $("exOne").innerHTML = `<span class="txt muted">${esc(msg)}</span>`; $("exOne").classList.remove("hidden"); }
+    $("exGameList").innerHTML = `<div class="muted">${esc(msg)}</div>`; $("exGameList").classList.toggle("hidden", !wantList);
+    return;
+  }
+  if (wantOne && r.games[0]) {
+    const g = r.games[0];
+    $("exOne").innerHTML = `<span class="txt">Only one game reaches this position:<br><strong>${esc(gameTitle(g))}</strong><br><span class="muted">${esc(gameSub(g))}${g.url ? "" : " · no link in the imported file"}</span></span>${magnLink(g)}`;
+    $("exOne").classList.remove("hidden");
+  }
+  if (wantList) {
+    $("exGameList").innerHTML = `<div class="muted" style="margin-bottom:4px">${r.total.toLocaleString()} game${r.total === 1 ? "" : "s"} reached this position${r.total > r.games.length ? ` (newest ${r.games.length} shown)` : ""}:</div>` +
+      r.games.map((g) => `<div class="gamerow"><span class="txt"><strong>${esc(gameTitle(g))}</strong><br><span class="sub">${esc(gameSub(g))}</span></span>${magnLink(g)}</div>`).join("");
+    $("exGameList").classList.remove("hidden");
+  } else $("exGameList").classList.add("hidden");
 }
 
 function rowHtml(o, tag, attrs) {
@@ -471,7 +545,7 @@ function onExplorerMove(from, to) {
 function exShapes() {                                  // keep the arrows on after a snap-back
   const ex = explorer.ex;
   if (exHints && ex.phase === "explore" && X.turn(ex) === "user")
-    ground.setAutoShapes(X.options(ex).map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
+    ground.setAutoShapes(weightedArrows(X.options(ex), "g"));
 }
 
 function exHint() {
@@ -1206,6 +1280,7 @@ $("exCancel").onclick = closeExplorer;
 $("exClose").onclick = closeExplorer;
 $("exBack").onclick = exBack;
 $("exReturn").onclick = exReturn;
+$("exGames").onclick = () => { if (!explorer) return; explorer.showGames = !explorer.showGames; $("exGames").textContent = explorer.showGames ? "Hide games" : "Games from here"; exRefreshGames(); };
 $("exCopy").onclick = exCopyPgn;
 $("exNewLine").onclick = exCreateLine;
 $("exMoves").onclick = (e) => { const m = e.target.closest("[data-i]"); if (m) exReview(Number(m.dataset.i)); };
@@ -1215,6 +1290,7 @@ $("exRestart").onclick = () => { if (explorer) { explorer.stats = { explored: 0,
 $("exRandom").onclick = () => exChoose(null);
 $("exChoices").onclick = (e) => { const b = e.target.closest("[data-uci]"); if (b) exChoose(b.dataset.uci); };
 $("hintBtn").onclick = hint;
+$("themeBoard").onchange = $("themePieces").onchange = () => applyTheme($("themeBoard").value, $("themePieces").value);
 $("speedSel").onchange = () => applySpeed($("speedSel").value);
 $("skipBtn").onclick = skipLine;
 $("allBtn").onclick = () => guardEditor() && practiceAll();
@@ -1264,6 +1340,7 @@ async function main() {
   initBoard();
   buildPalette();
   applySpeed(speed);
+  loadTheme();
   $("version").textContent = `My Chess Trainer v${VERSION}`;
   await S.load();
   refresh();
