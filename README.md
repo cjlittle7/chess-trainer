@@ -140,6 +140,34 @@ A static website can't store a shared number by itself, so the counter needs a t
 3. In the worker's **Settings → Bindings → Add → KV namespace**, set the variable name to exactly `COUNTER` and choose `tomatoes`.
 4. Copy the worker's address (like `https://tomato-counter.yourname.workers.dev`) into `config.js` as `tomatoCounterUrl`, upload `config.js` to GitHub, and reopen the app twice.
 
-The worker only accepts throws from mychesstrainer.net, www.mychesstrainer.net and cjlittle7.github.io (edit `DEFAULT_ORIGINS`, or add an `ALLOWED_ORIGINS` variable, to change that). Presses made offline are saved and sent when the phone is back online. Because Cloudflare KV isn't atomic, a few presses made in the very same instant by different people can be lost; that is fine for a toy counter.
+The worker only accepts throws from mychesstrainer.net, www.mychesstrainer.net and cjlittle7.github.io (edit `DEFAULT_ORIGINS`, or add an `ALLOWED_ORIGINS` variable, to change that). To stay well inside Cloudflare's free limits the app is frugal: it asks for the total once per visit (the first time the Study Break tab is opened), counts your own presses locally, and sends them in one batch at most every 10 minutes (and only if there is something new) plus once more when you close or leave the page. Other people's presses therefore show up the next time you reload. Unsent presses are kept if you're offline. The 10 minutes can be changed with `tomatoSyncMs` in `config.js`. Because Cloudflare KV isn't atomic, a few presses made in the very same instant by different people can be lost; that is fine for a toy counter.
 
 Replace `assets/study/photo.jpg` to change the picture; make sure you have the right to use it.
+
+## Training EXP (stage 1: on this device)
+
+- **Completing a line or puzzle:** 1 EXP per move you play. A **perfect** line (no wrong attempts, no hints) adds +5, and +5 more for each of 10, 15, 20 and 25 moves reached (so a perfect 20-move line earns 20 + 5 + 15 = 40).
+- **Daily limit:** only the first 5 completions each day earn EXP (your local day). Further lines still count towards your lifetime totals.
+- **Tomatoes:** +1 EXP per throw, up to 100 EXP per day. Reaching the 100th shows "Procedure Performed!". More throws still play but give no EXP.
+- **Auto-clickers:** script-made clicks, presses faster than about 11 a second, or ten presses with machine-perfect timing trigger a warning. The burst's EXP and tomatoes are taken back, and the button is inactive for 30 minutes.
+- **Your progress** panel shows EXP, today's allowances, lifetime lines / puzzles / perfect lines, your average perfect-line length, and your trickiest lines. You can set a nickname there.
+- All of this is saved in this browser only for now (clearing site data resets it). Accounts with a recovery code, the leaderboard and server-side checks come next.
+
+## Accounts and the leaderboard (stage 2)
+
+With the online service switched on, the Progress panel offers **Create account**. You pick a nickname and get a **recovery code** (no password). The code restores your profile on another phone or after clearing browser data; anyone who has it can use your profile, so keep it private. Progress you made before creating the account is carried over (within limits).
+
+- The server owns the rules: EXP, the 5-lines-a-day and 100-tomato-EXP-a-day caps, and a maximum believable pressing rate. A device only sends its new activity; the server's totals are the truth.
+- Uploads are batched: at most one every 10 minutes (`tomatoSyncMs`), plus when you leave the page, when you press **Sync now**, and when you open the leaderboard. The server accepts one batch per account every 15 seconds.
+- The **LEADERBOARD** tab ranks EXP, opening lines solved, puzzles solved, tomatoes thrown, and the average length of perfectly completed lines (needs 10 perfect lines). It's cached for 5 minutes.
+- Your nickname is public on the leaderboard. Nothing else is shown. No email or password is collected.
+- It can't be made cheat-proof (the app can't prove a line was really played), but daily caps, per-day limits on what counts, rate limits and a limit of 5 new accounts per network per day keep cheating small. Honest limits: someone can still make several accounts or play very fast.
+
+### Setting it up (replaces the earlier KV-only worker; about 10 minutes)
+1. Cloudflare dashboard → **Storage & databases → D1 SQL database → Create database**. Name it `chess-trainer`. You don't need to create any tables; the worker creates them.
+2. **Workers & Pages → your `tomato-counter` worker → Edit code**. Keep the file called `worker.js`, select everything, paste the new contents of `tools/tomato-counter-worker.js`, and **Deploy**.
+3. In the worker's **Settings → Bindings → Add → D1 database**: variable name exactly `DB`, database `chess-trainer`. Leave the old `COUNTER` KV binding in place: its tomato total is copied into the new counter the first time the worker runs.
+4. Open `https://<your-worker>.workers.dev/count` (it should show your total) and `/leaderboard` (empty lists at first).
+5. `config.js` doesn't change (`tomatoCounterUrl` is the same address). Upload the new app files to GitHub and reopen the app twice.
+
+**Moderation:** in the D1 database's **Console** you can remove an account with `DELETE FROM accounts WHERE nick_lc = 'someone';` (use lower case). Extend the `BLOCKED` list at the top of the worker to refuse more nickname words.

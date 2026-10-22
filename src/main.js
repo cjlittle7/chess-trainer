@@ -5,8 +5,9 @@ import * as S from "./store.js";
 import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
+import * as PR from "./progress.js";
 
-const VERSION = "2.6.0";
+const VERSION = "2.8.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -222,11 +223,18 @@ function finishLine() {
   state.active = false;
   lockBoard();
   const s = state.stats;
+  const ln = state.c.lines.find((l) => l.id === state.lineId);
+  const lineKey = `${state.c.id}:${state.lineId}`;
+  const gain = prog.recordLine({ key: lineKey, name: state.name, moves: s.moves, perfect: !s.wrong && !s.hints, puzzle: !!ln?.start, wrong: s.wrong });
+  renderProgress();
+  const expRow = gain.capped
+    ? `<tr><td>EXP</td><td>0 <small class="muted">(daily limit of ${PR.RULES.linesPerDay} lines reached)</small></td></tr>`
+    : `<tr><td>EXP earned</td><td>+${gain.earned} <small class="muted">(${gain.base}${gain.perfect ? ` + ${gain.perfect} perfect` : ""}${gain.long ? ` + ${gain.long} long line` : ""}) · ${gain.linesLeft} left today</small></td></tr>`;
   const table = `<table class="stats">
       <tr><td>Your moves</td><td>${s.moves}</td></tr>
       <tr><td>Correct on first try</td><td>${s.first}</td></tr>
       <tr><td>Wrong attempts</td><td>${s.wrong}</td></tr>
-      <tr><td>Hints used</td><td>${s.hints}</td></tr></table>` +
+      <tr><td>Hints used</td><td>${s.hints}</td></tr>${expRow}</table>` +
     (state.c.lines.find((l) => l.id === state.lineId)?.result ? `<div class="muted" style="margin-bottom:10px">Game result: ${RESULT_TEXT[state.c.lines.find((l) => l.id === state.lineId).result]}</div>` : "");
   setStatus("End of the line. Well done!", "good");
   if (!session) {
@@ -1306,9 +1314,10 @@ const tomato = { server: lsGet("tomatoServer", null), pending: lsGet("tomatoPend
 function renderTomatoCount() {
   const el = $("tomatoCount"), url = counterUrl();
   if (url) {
-    el.textContent = tomato.server == null && !tomato.pending ? "Tomatoes thrown worldwide: …"
-      : `Tomatoes thrown worldwide: ${((tomato.server || 0) + tomato.pending).toLocaleString()}`;
-    $("tomatoNote").textContent = tomato.pending ? "Syncing your latest throws…" : "";
+    const pend = prog.account ? prog.queuedTomatoes() : tomato.pending;
+    el.textContent = tomato.server == null && !pend ? "Tomatoes thrown worldwide: …"
+      : `Tomatoes thrown worldwide: ${((tomato.server || 0) + pend).toLocaleString()}`;
+    $("tomatoNote").textContent = pend ? "Your latest throws upload in a few minutes or when you leave." : "";
   } else {
     el.textContent = `Tomatoes thrown on this device: ${tomato.device.toLocaleString()}`;
     $("tomatoNote").textContent = "The worldwide counter isn't connected yet (see the README).";
@@ -1323,23 +1332,203 @@ async function tomatoRequest(path, init) {
   return j.count;
 }
 
+// Requests are kept to a minimum: one read the first time the tab is opened in a session, then at most one write every
+// tomatoSyncMs (10 minutes) and only if there are new throws, plus one last write when the page is hidden or closed.
+const syncMs = () => Number((window.APP_CONFIG || {}).tomatoSyncMs) || 600000;
 async function tomatoFlush() {
   if (!counterUrl() || tomato.flushing) return;
+  if (prog.account) { if (prog.hasQueue() || !tomato.loaded) await accountSync(); return; }
+  if (!tomato.pending && tomato.server != null && tomato.loaded) return;       // nothing to send, nothing to fetch
   tomato.flushing = true;
   try {
     if (!tomato.pending) tomato.server = await tomatoRequest("/count");
     while (tomato.pending > 0) {
-      const n = Math.min(tomato.pending, 20);
-      tomato.server = await tomatoRequest("/hit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n }) });
+      const n = Math.min(tomato.pending, 1000);
+      tomato.server = await tomatoRequest("/hit", { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ n }) });
       tomato.pending -= n; lsSet("tomatoPending", tomato.pending);
     }
-    lsSet("tomatoServer", tomato.server);
+    tomato.loaded = true; lsSet("tomatoServer", tomato.server);
   } catch { /* offline or the service is down: keep the pending throws and try again later */ }
   tomato.flushing = false;
   renderTomatoCount();
 }
+function tomatoBeacon() {                                // the page is being hidden or closed: send what is left without waiting for an answer
+  if (!counterUrl()) return;
+  if (prog.account) {
+    if (!prog.hasQueue() || acctBusy || Date.now() - prog.state.syncedAt < 16000) return;   // too soon after the last upload: keep it queued for next time
+    const taken = prog.takeQueue();
+    try {
+      const body = JSON.stringify({ code: prog.account.code, events: { lines: taken.lines, tomato: taken.tomato, flagged: taken.flagged } });
+      if (navigator.sendBeacon(counterUrl() + "/sync", new Blob([body], { type: "text/plain" }))) prog.ackQueue(taken);
+    } catch { /* ignore */ }
+    return;
+  }
+  if (!tomato.pending || tomato.flushing) return;
+  const n = Math.min(tomato.pending, 1000);
+  try {
+    if (navigator.sendBeacon(counterUrl() + "/hit", new Blob([JSON.stringify({ n })], { type: "text/plain" }))) {
+      tomato.pending -= n; tomato.server = (tomato.server || 0) + n; lsSet("tomatoPending", tomato.pending); lsSet("tomatoServer", tomato.server);
+    }
+  } catch { /* ignore */ }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") tomatoBeacon(); });
+window.addEventListener("pagehide", tomatoBeacon);
+setInterval(() => { if (tomato.pending || prog.hasQueue()) tomatoFlush(); }, syncMs());
 
-function throwTomato() {
+const prog = PR.createProgress({
+  load: () => { try { return JSON.parse(localStorage.getItem("profile")); } catch { return null; } },
+  save: (o) => { try { localStorage.setItem("profile", JSON.stringify(o)); } catch { /* ignore */ } },
+  today: () => new Date().toLocaleDateString("en-CA"),
+});
+let toastTimer;
+function toast(text, kind = "") {
+  const t = $("toast"); t.textContent = text; t.className = "toast " + kind;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add("hidden"), kind === "achievement" ? 4500 : 2500);
+}
+
+let acctMsg = "", acctBad = false, newCode = "", showCode = false, acctBusy = false;
+let loginOpen = false, codeDraft = "", nickDraft = null;          // what is typed in the account box survives a re-render
+const todayStr = () => new Date().toLocaleDateString("en-CA");
+const tzMinutes = () => -new Date().getTimezoneOffset();
+async function api(path, body) {
+  const r = await fetch(counterUrl() + path, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || "The service didn't answer (" + r.status + ")."); e.status = r.status; throw e; }
+  return j;
+}
+const say = (t, bad = false) => { acctMsg = t; acctBad = bad; renderAccount(); };
+const ago = (ms) => ms < 60000 ? "just now" : ms < 3600000 ? Math.round(ms / 60000) + " min ago" : ms < 86400000 ? Math.round(ms / 3600000) + " h ago" : Math.round(ms / 86400000) + " d ago";
+
+async function accountSync({ ranks = false } = {}) {
+  const acct = prog.account;
+  if (!acct || !counterUrl() || acctBusy) return null;
+  acctBusy = true;
+  const taken = prog.takeQueue();
+  const events = taken.lines.length || taken.tomato.n || taken.flagged ? { lines: taken.lines, tomato: taken.tomato, flagged: taken.flagged } : {};
+  try {
+    const j = await api("/sync", { code: acct.code, events, ranks });
+    prog.ackQueue(taken); prog.applyServer(j, todayStr());
+    tomato.server = j.global; tomato.loaded = true; lsSet("tomatoServer", j.global);
+    if (j.warn) { prog.lock(); refreshTomatoLock("more throws than a person can press"); }
+    if (acctMsg && !acctBad) acctMsg = "";
+    return j;
+  } catch (e) {
+    if (e.status === 401) say("This device's account sign-in is no longer valid. Log out and log in again with your recovery code.", true);
+    return null;                                   // offline, or too soon after the last upload: the queue is kept and retried later
+  } finally {
+    acctBusy = false; renderAccount(); renderProgress(); renderTomatoCount();
+  }
+}
+const sendLeftoverHits = () => { if (tomato.pending > 0) { const n = tomato.pending; tomato.pending = 0; lsSet("tomatoPending", 0); api("/hit", { n }).catch(() => {}); } };
+
+function renderAccount() {
+  const box = $("acctBox"); if (!box) return;
+  const st = prog.state, a = prog.account;
+  let html = "<h2>Account</h2>";
+  if (!counterUrl()) html += '<small class="muted">Accounts and the leaderboard need the online service (see the README).</small>';
+  else if (a) {
+    html += `${newCode ? `<div class="codebox">${esc(newCode)}</div>
+        <small class="muted">This recovery code is the only way to get your profile back on another phone or after clearing your browser data, and anyone who has it can use your profile. Save it somewhere safe.</small>
+        <div class="row" style="margin:8px 0"><button id="copyCodeBtn" class="small">Copy code</button><button id="savedBtn" class="small secondary">I've saved it</button></div>` : ""}
+      <div>Signed in as <strong>${esc(st.nick)}</strong></div>
+      <small class="muted">Last synced ${st.syncedAt ? ago(Date.now() - st.syncedAt) : "not yet"}${prog.hasQueue() ? " · new activity waiting to upload" : ""}</small>
+      <div class="row" style="margin-top:8px"><button id="syncBtn" class="small secondary">Sync now</button>
+        <button id="codeBtn" class="small secondary">${showCode ? "Hide" : "Show"} recovery code</button><button id="outBtn" class="small danger">Log out</button></div>
+      ${showCode && !newCode ? `<div class="codebox">${esc(a.code)}</div>` : ""}`;
+  } else {
+    html += `<input type="text" id="nickInput" placeholder="Choose a nickname (3–20 characters)" maxlength="20" value="${esc(nickDraft ?? st.nick)}" autocomplete="off">
+      <div class="row"><button id="regBtn">Create account</button></div>
+      <small class="muted">Keeps your EXP and stats, works on any device, and puts you on the leaderboard (nicknames are public). You get a recovery code instead of a password.</small>
+      <details id="loginBox" style="margin-top:8px"${loginOpen ? " open" : ""}><summary>I already have a recovery code</summary>
+        <input type="text" id="codeInput" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" autocapitalize="characters" autocomplete="off" value="${esc(codeDraft)}" style="margin-top:8px">
+        <button id="loginBtn" class="secondary">Log in</button>
+        <small class="muted" style="display:block;margin-top:6px">Logging in replaces the progress saved on this device with the account's.</small></details>`;
+  }
+  html += `<div id="acctMsg" class="${acctBad ? "bad" : "good"}" style="margin:8px 0">${esc(acctMsg)}</div>`;
+  box.innerHTML = html;
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  const busy = (btn, fn) => async () => { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } };
+  if ($("nickInput")) { $("nickInput").oninput = (e) => { nickDraft = e.target.value; }; $("nickInput").onchange = (e) => prog.setNick(e.target.value); }
+  if ($("loginBox")) { $("loginBox").ontoggle = (e) => { loginOpen = e.target.open; }; $("codeInput").oninput = (e) => { codeDraft = e.target.value; }; }
+  if ($("regBtn")) $("regBtn").onclick = busy($("regBtn"), async () => {
+    try {
+      const nick = $("nickInput").value.trim(); prog.setNick(nick);
+      const j = await api("/register", { nick, tz: tzMinutes(), import: prog.importPayload() });
+      prog.setAccount(j.code, j, todayStr()); newCode = j.code; showCode = false; nickDraft = null;
+      tomato.server = j.global; tomato.loaded = true; sendLeftoverHits();
+      acctMsg = "Account created. Welcome, " + j.nick + "!"; acctBad = false;
+    } catch (e) { acctMsg = e.message === "Failed to fetch" ? "Couldn't reach the online service. Check your connection." : e.message; acctBad = true; }
+    renderAccount(); renderProgress(); renderTomatoCount();
+  });
+  if ($("loginBtn")) $("loginBtn").onclick = busy($("loginBtn"), async () => {
+    try {
+      const code = $("codeInput").value.trim();
+      const j = await api("/login", { code, tz: tzMinutes() });
+      prog.setAccount(code, j, todayStr(), j.perLine); newCode = ""; showCode = false; codeDraft = ""; loginOpen = false;
+      tomato.server = j.global; tomato.loaded = true; sendLeftoverHits();
+      acctMsg = "Logged in as " + j.nick + "."; acctBad = false;
+    } catch (e) { acctMsg = e.message === "Failed to fetch" ? "Couldn't reach the online service. Check your connection." : e.message; acctBad = true; }
+    renderAccount(); renderProgress(); renderTomatoCount();
+  });
+  on("syncBtn", async () => { await accountSync(); if (!acctMsg) say("Synced."); });
+  on("codeBtn", () => { showCode = !showCode; renderAccount(); });
+  on("outBtn", async () => { await accountSync(); prog.signOut(); tomato.loaded = false; showCode = false; newCode = ""; say("Logged out. This device is back to a blank profile."); renderProgress(); renderTomatoCount(); });
+  on("copyCodeBtn", async () => { try { await navigator.clipboard.writeText(newCode); say("Copied."); } catch { say("Couldn't copy automatically. Select the code and copy it.", true); } });
+  on("savedBtn", () => { newCode = ""; acctMsg = ""; renderAccount(); });
+}
+
+function renderProgress() {
+  const st = prog.state, life = st.life, avg = prog.avgPerfectLength();
+  $("expChip").textContent = `⭐ ${st.exp.toLocaleString()} EXP`;
+  const weak = prog.weakest(5);
+  $("progStats").innerHTML = `
+    <h2>Progress</h2>
+    <table class="progtab">
+      <tr><td>Training EXP</td><td>${st.exp.toLocaleString()}</td></tr>
+      <tr><td>Lines that still earn EXP today</td><td>${prog.linesLeft()} of ${PR.RULES.linesPerDay}</td></tr>
+      <tr><td>Tomato EXP left today</td><td>${prog.tomatoLeft()} of ${PR.RULES.tomatoPerDay}</td></tr>
+      <tr><td>Lines completed</td><td>${life.lines.toLocaleString()}</td></tr>
+      <tr><td>Puzzles solved</td><td>${life.puzzles.toLocaleString()}</td></tr>
+      <tr><td>Perfect lines</td><td>${life.perfect.toLocaleString()}</td></tr>
+      <tr><td>Average perfect line length</td><td>${life.perfect ? avg.toFixed(1) + " moves" : "–"}</td></tr>
+      <tr><td>Tomatoes thrown</td><td>${life.tomatoes.toLocaleString()}</td></tr>
+    </table>
+    <h2>Lines to work on</h2>
+    ${weak.length ? weak.map((w) => `<div class="weak"><span>${esc(w.name)}</span><span>${Math.round(w.rate * 100)}% perfect · ${w.att} tries</span></div>`).join("")
+                  : '<small class="muted">Complete a line at least twice and your trickiest ones show up here.</small>'}
+    <small class="muted" style="display:block;margin-top:10px">Rules: 1 EXP per move, +5 for a perfect line, +5 more at 10, 15, 20 and 25 moves. Only ${PR.RULES.linesPerDay} lines per day earn EXP.</small>`;
+  renderTomatoExp();
+  const ae = document.activeElement;
+  if (!(ae && ae.tagName === "INPUT" && $("acctBox").contains(ae))) renderAccount();     // keeps "last synced" fresh, but never while someone is typing in it
+}
+function renderTomatoExp() {
+  const el = $("tomatoExp"); if (!el) return;
+  el.textContent = `Tomato EXP today: ${PR.RULES.tomatoPerDay - prog.tomatoLeft()} / ${PR.RULES.tomatoPerDay}`;
+}
+let lockTimer;
+function refreshTomatoLock(reason) {
+  const left = prog.lockedFor(), btn = $("tomatoBtn"), warn = $("tomatoWarn");
+  btn.disabled = left > 0; warn.classList.toggle("hidden", left <= 0);
+  clearInterval(lockTimer);
+  if (left > 0) {
+    const show = () => { const l = prog.lockedFor(); if (l <= 0) return refreshTomatoLock(); warn.textContent =
+      `Warning: automatic clicking was detected${reason ? " (" + reason + ")" : ""}. Those throws don't count towards EXP or the leaderboard, and the button is inactive for ${Math.ceil(l / 60000)} more minute(s).`; };
+    show(); lockTimer = setInterval(show, 15000);
+  }
+}
+
+function throwTomato(ev) {
+  const r = prog.recordTomato(ev ? ev.isTrusted : true);
+  if (r.locked) {
+    if (r.flagged) {                                                  // take the burst back out of the counters and clear the picture
+      const back = r.revoked - 1;
+      tomato.device = Math.max(0, tomato.device - back); lsSet("tomatoDevice", tomato.device);
+      if (counterUrl() && !prog.account) { tomato.pending = Math.max(0, tomato.pending - back); lsSet("tomatoPending", tomato.pending); }
+      $("studyOverlay").innerHTML = "";
+      renderTomatoCount();
+    }
+    refreshTomatoLock(r.reason); renderProgress(); return;
+  }
   const img = document.createElement("img");
   img.className = "tomato"; img.alt = "";
   const dx = (Math.random() - 0.5) * 2 * TOMATO_SPREAD, dy = (Math.random() - 0.5) * 2 * TOMATO_SPREAD;
@@ -1348,19 +1537,55 @@ function throwTomato() {
   $("studyOverlay").append(img);
   setTimeout(() => { if (img.isConnected) img.src = TOMATO_LAST; }, TOMATO_MS);   // the last frame stays until you exit
   tomato.device++; lsSet("tomatoDevice", tomato.device);
-  tomato.pending += counterUrl() ? 1 : 0; lsSet("tomatoPending", tomato.pending);
-  renderTomatoCount();
-  clearTimeout(tomato.timer); tomato.timer = setTimeout(tomatoFlush, 400);
+  tomato.pending += counterUrl() && !prog.account ? 1 : 0; lsSet("tomatoPending", tomato.pending);
+  renderTomatoCount(); renderProgress();
+  if (r.achievement) toast("Procedure Performed!", "achievement");
 }
 
+// ------------------------------------------------------------- leaderboard
+const BOARD_INFO = { exp: ["EXP", "EXP", (v) => v.toLocaleString()], lines: ["Opening lines solved", "Lines", (v) => v.toLocaleString()], puzzles: ["Puzzles solved", "Puzzles", (v) => v.toLocaleString()],
+                     tomatoes: ["Tomatoes thrown", "Tomatoes", (v) => v.toLocaleString()], avglen: ["Average length of perfect lines", "Avg moves", (v) => Number(v).toFixed(1)] };
+const board = { data: null, at: 0, which: "exp", ranks: null };
+async function loadBoard(force = false) {
+  const note = $("boardNote");
+  if (!counterUrl()) { note.textContent = "The leaderboard needs the online service (see the README)."; renderBoard(); return; }
+  const stale = !board.data || Date.now() - board.at > 300000;
+  if (stale || force) {
+    try {
+      const r = await fetch(counterUrl() + "/leaderboard"); if (!r.ok) throw new Error("bad answer");
+      board.data = await r.json(); board.at = Date.now(); note.textContent = "Updated about every 5 minutes.";
+    } catch { note.textContent = board.data ? "Couldn't refresh. Showing the last list." : "Couldn't reach the leaderboard. Try again later."; }
+  }
+  renderBoard();
+  if (prog.account) { const j = await accountSync({ ranks: true }); if (j && j.ranks) { board.ranks = j.ranks; renderBoard(); } }
+}
+function renderBoard() {
+  const which = board.which, [title, head, fmt] = BOARD_INFO[which];
+  for (const b of $("boardTabs").querySelectorAll("button")) b.classList.toggle("secondary", b.dataset.b !== which);
+  const rows = board.data ? board.data[which] || [] : [];
+  const mine = (prog.state.nick || "").toLowerCase();
+  $("boardTable").innerHTML = `<tr><th>#</th><th>${esc(title)}</th><th>${esc(head)}</th></tr>` +
+    (rows.length ? rows.map((r) => `<tr class="${prog.account && r.nick.toLowerCase() === mine ? "me" : ""}"><td>${r.rank}</td><td>${esc(r.nick)}</td><td>${fmt(r.value)}</td></tr>`).join("")
+                 : `<tr><td colspan="3" class="muted">${board.data ? "Nobody here yet. Be the first!" : "…"}</td></tr>`);
+  const me = $("boardMe");
+  if (!prog.account) { me.textContent = counterUrl() ? "Create an account in “Your progress” to join the leaderboard." : ""; return; }
+  const st = prog.state, rk = board.ranks && board.ranks[which];
+  const val = { exp: st.exp, lines: st.life.lines, puzzles: st.life.puzzles, tomatoes: st.life.tomatoes, avglen: prog.avgPerfectLength() }[which];
+  if (which === "avglen" && st.life.perfect < 10) me.textContent = `You: needs 10 perfect lines to be ranked (you have ${st.life.perfect}).`;
+  else me.textContent = `You (${st.nick}): ${rk && board.ranks ? "#" + rk + " of " + board.ranks.players + " · " : ""}${fmt(val)} ${head.toLowerCase()}`;
+}
+$("boardTabs").onclick = (e) => { const b = e.target.closest("button[data-b]"); if (b) { board.which = b.dataset.b; renderBoard(); } };
+
+const VIEWS = { train: ["trainerView", "tabTrain"], study: ["studyView", "tabStudy"], board: ["boardView", "tabBoard"] };
 function showTab(which) {
-  const study = which === "study";
-  $("trainerView").classList.toggle("hidden", study);
-  $("studyView").classList.toggle("hidden", !study);
-  $("tabTrain").classList.toggle("active", !study); $("tabStudy").classList.toggle("active", study);
-  $("tabTrain").setAttribute("aria-pressed", String(!study)); $("tabStudy").setAttribute("aria-pressed", String(study));
-  if (study) { renderTomatoCount(); tomatoFlush(); window.scrollTo(0, 0); }
-  else { $("studyOverlay").innerHTML = ""; ground?.redrawAll?.(); }          // leaving the study break clears the tomatoes
+  for (const [k, [view, tab]] of Object.entries(VIEWS)) {
+    $(view).classList.toggle("hidden", k !== which);
+    $(tab).classList.toggle("active", k === which); $(tab).setAttribute("aria-pressed", String(k === which));
+  }
+  if (which !== "study") $("studyOverlay").innerHTML = "";                       // leaving the study break clears the tomatoes
+  if (which === "study") { refreshTomatoLock(); renderTomatoExp(); renderTomatoCount(); if (!tomato.loaded && !prog.hasQueue() && !tomato.pending) tomatoFlush(); window.scrollTo(0, 0); }
+  else if (which === "board") { loadBoard(); window.scrollTo(0, 0); }
+  else ground?.redrawAll?.();
 }
 
 // ------------------------------------------------------------------- wiring
@@ -1415,7 +1640,10 @@ $("tabTrain").onclick = () => showTab("train");
 $("tabStudy").onclick = () => showTab("study");
 $("studyExit").onclick = () => showTab("train");
 $("tomatoBtn").onclick = throwTomato;
-window.addEventListener("online", () => tomatoFlush());
+$("tabBoard").onclick = () => showTab("board");
+$("boardExit").onclick = () => showTab("train");
+renderAccount(); renderProgress();
+setTimeout(() => { if (prog.account && prog.hasQueue()) accountSync(); }, 4000);          // send anything left over from the last visit
 $("hintBtn").onclick = hint;
 $("themeBoard").onchange = $("themePieces").onchange = () => applyTheme($("themeBoard").value, $("themePieces").value);
 $("speedSel").onchange = () => applySpeed($("speedSel").value);
