@@ -95,6 +95,8 @@ Press **Opening explorer** in the Collection panel. Choose whether you play Whit
 - **Create line from here** opens the line editor with those moves already entered; keep playing, pick a collection and Save line. (This closes the explorer.)
 - Untick **Auto-play the opponent's only move** to use the explorer with nothing played for you: even when your opponent has just one move,
   you play it yourself (drag their piece or press the button). It can be switched on again at any time and is remembered.
+- Viewing an earlier move also shows **Explore from here**: it drops the later moves and carries on exploring from that position
+  (so you don't have to undo them one by one).
 - **Back** takes a move back, **Restart** starts again, and a summary appears at the end of each line.
 - Puzzles (custom-position lines) are not used.
 
@@ -114,7 +116,8 @@ is opened; change `CACHE` in `sw.js` if you add or rename files.
 
 Open **Appearance** to pick a board colour and a piece set (saved on this device). Piece sets: Classic (Colin M.L. Burnett, GPLv2+), Merida
 (Armando Hernandez Marroquin, GPLv2+), Chessnut (Alexis Luengas, Apache 2.0), Modern (RhosGFX, CC0) and Celtic (Maurizio Monge, MIT),
-all taken from the Lichess project. See `assets/pieces/CREDITS.md`.
+all taken from the Lichess project. **Barnes (custom)** is a set made from your own photos (`assets/pieces/barnes`, one image per piece; replace
+the files and rebuild to change it). See `assets/pieces/CREDITS.md`.
 
 Explorer arrows are weighted by popularity: the more games (or lines) play a move, the thicker and more opaque its arrow, on a
 logarithmic scale relative to the most-played move (a move played 10 times less than the top move gets half the weight, 100 times less

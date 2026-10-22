@@ -6,7 +6,7 @@ import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
 
-const VERSION = "2.3.0";
+const VERSION = "2.5.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -24,7 +24,7 @@ function applySpeed(name) {
 }
 
 // ---- themes: a class on <body> picks the board colours and the piece set (kept on this device)
-const THEMES = { board: ["brown", "green", "blue", "gray", "purple", "night"], pieces: ["classic", "merida", "chessnut", "rhosgfx", "celtic"] };
+const THEMES = { board: ["brown", "green", "blue", "gray", "purple", "night"], pieces: ["classic", "merida", "chessnut", "rhosgfx", "celtic", "barnes"] };
 function applyTheme(board, pieces) {
   if (!THEMES.board.includes(board)) board = "brown";
   if (!THEMES.pieces.includes(pieces)) pieces = "classic";
@@ -53,7 +53,7 @@ function weightedArrows(opts, colorName) {
     // log scale: a move played 10x less than the top move gets half the weight, 100x less gets the minimum
     const w = max > 1 ? Math.max(0.05, Math.min(1, 1 + Math.log10(o.count / max) / 2)) : 1;
     const step = Math.min(ARROW_STEPS.length - 1, Math.round(w * (ARROW_STEPS.length - 1)));
-    return { orig: o.from, dest: o.to, brush: `${colorName}${step}`, modifiers: { lineWidth: Math.round(3 + 15 * w) } };
+    return { orig: o.from, dest: o.to, brush: `${colorName}${step}`, modifiers: { lineWidth: Math.round(3 + 7 * w) } };
   }).sort((a, b) => a.modifiers.lineWidth - b.modifiers.lineWidth);           // thin arrows are drawn last so they stay visible
 }
 
@@ -426,7 +426,7 @@ function exRender(ready) {
   const mine = t === "user";
   showPosition(v, { interactive: ready && mine });
   st.review = null;
-  $("exReturn").classList.add("hidden");
+  $("exReviewRow").classList.add("hidden");
   $("exMoves").innerHTML = ex.moves.length ? ex.sans.map((m, i) =>
     `${i % 2 === 0 ? `<span class="num">${i / 2 + 1}.</span> ` : ""}<span class="mv" data-i="${i}">${esc(m)}</span> `).join("") : "Starting position";
   $("exBack").disabled = ex.moves.length === 0; $("exRandom").disabled = false;
@@ -598,7 +598,7 @@ function exReview(i) {
   showPosition(E.view(r.pos, moves[i]), { interactive: false });
   ground.setAutoShapes([]);
   $("exMoves").querySelectorAll(".mv").forEach((m) => m.classList.toggle("cur", Number(m.dataset.i) === i));
-  $("exReturn").classList.remove("hidden");
+  $("exReviewRow").classList.remove("hidden");
   $("exBack").disabled = true; $("exRandom").disabled = true;
   setStatus(`Viewing the position after move ${Math.floor(i / 2) + 1}${i % 2 ? "..." : "."} ${st.ex.sans[i]}. Your explorer line is saved.`);
 }
@@ -607,11 +607,26 @@ function exReturn() {
   const st = explorer;
   if (!st || st.review == null) return;
   st.review = null;
-  $("exReturn").classList.add("hidden");
+  $("exReviewRow").classList.add("hidden");
   $("exMoves").querySelectorAll(".mv.cur").forEach((m) => m.classList.remove("cur"));
   $("exBack").disabled = st.ex.moves.length === 0; $("exRandom").disabled = false;
   if (st.active) exRender(true);
   else { showPosition(exView(), { interactive: false }); if (st.savedStatus) setStatus(...st.savedStatus); }
+}
+
+/** From the position being viewed, carry on exploring: the later moves are dropped. */
+function exFromHere() {
+  const st = explorer;
+  if (!st?.ex || st.busy || st.review == null) return;
+  const moves = st.ex.moves.slice(0, st.review + 1);
+  let ex;
+  try { ex = X.rebuild(st.ex, moves); } catch (e) { return setStatus(e.message, "bad"); }
+  ex.switched = false;
+  st.ex = ex; st.review = null; st.active = true; st.missedHere = false; st.savedStatus = null;
+  $("exReviewRow").classList.add("hidden");
+  hideResult(); ground.setAutoShapes([]);
+  $("hintBtn").disabled = false;
+  exContinue();
 }
 
 function exSetHints(on) {
@@ -1302,6 +1317,7 @@ $("exCancel").onclick = closeExplorer;
 $("exClose").onclick = closeExplorer;
 $("exBack").onclick = exBack;
 $("exReturn").onclick = exReturn;
+$("exFrom").onclick = exFromHere;
 $("exGames").onclick = () => {
   if (!explorer) return;
   explorer.showGames = exGamesShow = !explorer.showGames;
