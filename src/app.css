@@ -87,3 +87,13 @@ button.exrow:active { background:#2f2c28; }
 }
 
 #exCopyMsg.good { color:var(--accent); } #exCopyMsg.bad { color:var(--bad); }
+
+/* results and game libraries */
+.tag.res { background:#6b6660; color:#fff; }
+.exrow { flex-wrap:wrap; }
+.wdl { display:inline-flex; width:64px; height:10px; border-radius:3px; overflow:hidden; border:1px solid #666; align-self:center; }
+.wdl i { display:block; height:100%; } .wdl .w { background:#f1efe9; } .wdl .d { background:#8b8680; } .wdl .b { background:#2a2826; }
+.pct { color:var(--muted); font-size:12px; white-space:nowrap; }
+.libitem { display:flex; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--border); }
+.libitem:first-child { border-top:0; } .libitem .info { flex:1; min-width:0; } .libitem .name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#libMsg.good { color:var(--accent); } #libMsg.bad { color:var(--bad); }

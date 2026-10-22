@@ -4,10 +4,12 @@ import * as E from "./engine.js";
 import * as S from "./store.js";
 import * as T from "./trainer.js";
 import * as X from "./explorer.js";
+import * as L from "./library.js";
 
-const VERSION = "1.8.0";
+const VERSION = "2.0.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // How quickly the opponent replies: pause before the reply, and move animation length (ms).
@@ -189,7 +191,8 @@ function finishLine() {
       <tr><td>Your moves</td><td>${s.moves}</td></tr>
       <tr><td>Correct on first try</td><td>${s.first}</td></tr>
       <tr><td>Wrong attempts</td><td>${s.wrong}</td></tr>
-      <tr><td>Hints used</td><td>${s.hints}</td></tr></table>`;
+      <tr><td>Hints used</td><td>${s.hints}</td></tr></table>` +
+    (state.c.lines.find((l) => l.id === state.lineId)?.result ? `<div class="muted" style="margin-bottom:10px">Game result: ${RESULT_TEXT[state.c.lines.find((l) => l.id === state.lineId).result]}</div>` : "");
   setStatus("End of the line. Well done!", "good");
   if (!session) {
     showResult(`<h2>Line complete</h2>${table}<button id="nextBtn">Drill again</button>`);
@@ -261,6 +264,8 @@ function resetTraining() {
 const exSide = () => document.querySelector('input[name="exSide"]:checked').value;
 const exMsg = (t, bad = false) => { const m = $("exSetupMsg"); m.textContent = t; m.style.color = bad ? "var(--bad)" : ""; };
 
+let exLibs = [];                                     // game libraries (meta only), for the setup list
+const exSrc = () => document.querySelector('input[name="exSrc"]:checked').value;
 let exHints = true;
 try { exHints = localStorage.getItem("exHints") !== "off"; } catch { /* ignore */ }
 
@@ -283,16 +288,38 @@ function exRenderColls(checkedIds) {
 }
 
 function exUpdateStart() {
+  if (explorer?.setupOpen && exSrc() === "lib") return;
   const n = document.querySelectorAll("#exColls input:checked").length;
   $("exStart").disabled = n === 0;
   exMsg(n ? "" : "Tick at least one collection.");
 }
 
-function openExplorer() {
+async function exLoadLibs() { try { exLibs = await L.list(); } catch { exLibs = []; } }
+
+function exSyncSrc() {
+  const lib = exSrc() === "lib";
+  $("exCollBox").classList.toggle("hidden", lib); $("exLibBox").classList.toggle("hidden", !lib);
+  const sel = $("exLibSel"), prev = sel.value;
+  sel.innerHTML = exLibs.map((l) => `<option value="${l.id}">${esc(l.name)} (${l.games.toLocaleString()} games${l.color ? ", " + l.color : ""})</option>`).join("");
+  if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  const cur = exLibs.find((l) => String(l.id) === sel.value);
+  const locked = lib && cur?.color;
+  if (locked) document.querySelector(`input[name="exSide"][value="${cur.color}"]`).checked = true;
+  document.querySelectorAll('input[name="exSide"]').forEach((r) => { r.disabled = !!locked; });
+  if (lib) { $("exStart").disabled = !exLibs.length; exMsg(exLibs.length ? "" : "You have no game libraries yet. Add one under \"Game libraries\" below."); }
+  else { document.querySelectorAll('input[name="exSide"]').forEach((r) => { r.disabled = false; }); exRenderColls(); }
+}
+
+async function openExplorer() {
   if (!guardEditor()) return;
   state = null; session = null; hideResult(); setProgress("");
   $("hintBtn").disabled = true; $("skipBtn").disabled = true;
   explorer = { setupOpen: true };
+  await exLoadLibs();
+  if (!explorer?.setupOpen) return;
+  document.querySelector('input[name="exSrc"][value="colls"]').checked = true;
+  $("exCollBox").classList.remove("hidden"); $("exLibBox").classList.add("hidden");
+  document.querySelectorAll('input[name="exSide"]').forEach((r) => { r.disabled = false; });
   const c = coll(), side = sideOf(c);
   document.querySelector(`input[name="exSide"][value="${side}"]`).checked = true;
   $("exSetup").classList.remove("hidden"); $("exRun").classList.add("hidden");
@@ -304,7 +331,13 @@ function openExplorer() {
   $("exPanel").scrollIntoView?.({ block: "nearest" });
 }
 
-function exStart() {
+async function exStart() {
+  if (exSrc() === "lib") {
+    const id = Number($("exLibSel").value), side = exSide();
+    let lib, ex;
+    try { lib = await L.get(id); ex = X.createLib(lib, side, Math.max(1, Number($("exMin").value) || 1)); } catch (e) { return exMsg(e.message, true); }
+    return launchExplorer({ colls: [], side, ids: [], ex, lib });
+  }
   const ids = [...document.querySelectorAll("#exColls input:checked")].map((i) => Number(i.value));
   const side = exSide();
   const colls = S.collections().filter((c) => ids.includes(c.id));
@@ -313,14 +346,15 @@ function exStart() {
   launchExplorer({ colls, side, ids, ex });
 }
 
-function launchExplorer({ colls, side, ids, ex }) {
+function launchExplorer({ colls, side, ids, ex, lib = null }) {
   const stats = explorer?.stats || { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 };
-  explorer = { ex, colls, side, ids, busy: true, active: true, missedHere: false, stats };
+  explorer = { ex, colls, side, ids, lib, busy: true, active: true, missedHere: false, stats };
   hideResult();
   $("exSetup").classList.add("hidden"); $("exRun").classList.remove("hidden"); $("exPanel").classList.remove("hidden");
   $("hintBtn").disabled = false; $("skipBtn").disabled = true;
   ground.set({ orientation: side });
-  setProgress(`Opening explorer · ${side === "white" ? "White" : "Black"} · ${colls.length} collection${colls.length === 1 ? "" : "s"}`);
+  setProgress(lib ? `Opening explorer · ${lib.name} · ${side === "white" ? "White" : "Black"}`
+                  : `Opening explorer · ${side === "white" ? "White" : "Black"} · ${colls.length} collection${colls.length === 1 ? "" : "s"}`);
   exContinue();
 }
 
@@ -365,7 +399,7 @@ function exRender(ready) {
     ? `Only one line is left: ${X.testLineName(ex)}. From here it tests you. ` : "";
   ex.switched = false;
   if (t === "choose") {
-    setStatus(`${note}Your opponent has ${opts.length} replies in your lines. Drag one of their pieces, or use the buttons.`);
+    setStatus(`${note}Your opponent has ${opts.length} replies in ${ex.lib ? "the games" : "your lines"}. Drag one of their pieces, or use the buttons.`);
     $("exInfo").textContent = "";
     $("exChoose").classList.remove("hidden");
     $("exChoices").innerHTML = opts.map((o) => rowHtml(o, "button", ` data-uci="${o.uci}"`)).join("");
@@ -383,10 +417,11 @@ function exRender(ready) {
   } else {
     const n = X.linesLeft(ex);
     if (exHints) {
-      $("exInfo").textContent = `${n} line${n === 1 ? "" : "s"} continue from here. Play one of these moves:`;
+      $("exInfo").textContent = ex.lib ? `${n.toLocaleString()} game${n === 1 ? "" : "s"} reached this position. Moves played (bar: White wins / draws / Black wins):`
+                                       : `${n} line${n === 1 ? "" : "s"} continue from here. Play one of these moves:`;
       $("exHints").innerHTML = opts.map((o) => rowHtml(o, "div", "")).join("");
       ground.setAutoShapes(opts.map((o) => ({ orig: o.from, dest: o.to, brush: "green" })));
-      setStatus(`${note}Your move: ${opts.length} option${opts.length === 1 ? "" : "s"} in your lines.`);
+      setStatus(`${note}Your move: ${opts.length} option${opts.length === 1 ? "" : "s"} in ${ex.lib ? "the games" : "your lines"}.`);
     } else {
       $("exInfo").textContent = "Hints are off.";
       ground.setAutoShapes([]);
@@ -397,8 +432,15 @@ function exRender(ready) {
 
 function rowHtml(o, tag, attrs) {
   if (!exHints) return `<${tag} class="exrow"${attrs}><span class="san">${esc(o.san)}</span></${tag}>`;
+  const lib = !!explorer?.ex?.lib, noun = lib ? "game" : "line";
   const names = o.names.length > 3 ? o.names.slice(0, 3).join(", ") + ` +${o.names.length - 3}` : o.names.join(", ");
-  return `<${tag} class="exrow"${attrs}><span class="san">${esc(o.san)}</span><span class="cnt">${o.count} line${o.count === 1 ? "" : "s"}</span><span class="nm">${esc(names)}</span></${tag}>`;
+  let bar = "";
+  if (o.res) {
+    const t = o.res.w + o.res.d + o.res.b, pc = (v) => Math.round((100 * v) / t);
+    bar = `<span class="wdl" title="White ${pc(o.res.w)}% · Draw ${pc(o.res.d)}% · Black ${pc(o.res.b)}%${lib ? "" : ` (of ${t} full game${t === 1 ? "" : "s"})`}"><i class="w" style="width:${(100 * o.res.w) / t}%"></i><i class="d" style="width:${(100 * o.res.d) / t}%"></i><i class="b" style="width:${(100 * o.res.b) / t}%"></i></span>` +
+          `<span class="pct">${pc(o.res.w)}/${pc(o.res.d)}/${pc(o.res.b)}%</span>`;
+  }
+  return `<${tag} class="exrow"${attrs}><span class="san">${esc(o.san)}</span><span class="cnt">${o.count.toLocaleString()} ${noun}${o.count === 1 ? "" : "s"}</span>${bar}<span class="nm">${esc(names)}</span></${tag}>`;
 }
 
 function onExplorerMove(from, to) {
@@ -533,8 +575,8 @@ function exBack() {
   if (!st?.ex || st.busy || st.review != null || !st.ex.moves.length) return;
   const moves = st.ex.moves.slice();
   moves.pop();
-  let ex = X.replay(st.colls, st.side, moves);
-  while (moves.length && X.turn(ex) === "auto") { moves.pop(); ex = X.replay(st.colls, st.side, moves); }
+  let ex = X.rebuild(st.ex, moves);
+  while (moves.length && X.turn(ex) === "auto") { moves.pop(); ex = X.rebuild(st.ex, moves); }
   ex.switched = false;
   st.ex = ex; st.active = true; st.missedHere = false;
   hideResult();
@@ -544,10 +586,10 @@ function exBack() {
 
 function exRestart() {
   const st = explorer;
-  if (!st?.colls) return;
+  if (!st?.ex) return;
   let ex;
-  try { ex = X.create(st.colls, st.side); } catch (e) { return setStatus(e.message, "bad"); }
-  launchExplorer({ colls: st.colls, side: st.side, ids: st.ids, ex });
+  try { ex = X.rebuild(st.ex, []); } catch (e) { return setStatus(e.message, "bad"); }
+  launchExplorer({ colls: st.colls, side: st.side, ids: st.ids, ex, lib: st.lib });
 }
 
 function exFinish() {
@@ -558,8 +600,10 @@ function exFinish() {
   $("exInfo").textContent = "";
   const ended = X.endedLines(ex);
   const names = [...new Set(ended.map((e) => e.name))];
-  setStatus(names.length ? `End of the line: ${names.join(" / ")}` : "End of the line.", "good");
-  showResult(`<h2>Explorer: line complete</h2>
+  const results = [...new Set(ended.map((e) => e.result).filter(Boolean))].map((r) => RESULT_TEXT[r]);
+  const resNote = results.length ? ` (${results.join(" / ")})` : "";
+  setStatus(ex.lib ? "End of the games in this library for this line." : names.length ? `End of the line: ${names.join(" / ")}${resNote}` : "End of the line.", "good");
+  showResult(`<h2>${ex.lib ? "Explorer: end of the games" : "Explorer: line complete"}</h2>${results.length ? `<div style="margin-bottom:8px">Game result: ${esc(results.join(" / "))}</div>` : ""}
     <div class="muted" style="margin-bottom:8px">${esc(E.sanLine(ex.sans))}</div>
     <table class="stats">
       <tr><td>Moves explored</td><td>${s.explored}</td></tr>
@@ -576,6 +620,136 @@ function exFinish() {
 }
 
 function closeExplorer() { exHide(); resetTraining(); }
+
+// ------------------------------------------------------------- game libraries
+let libJob = null;                                    // { abort: AbortController } while an import runs
+const libMsg = (t, cls = "") => { const m = $("libMsg"); m.textContent = t; m.className = cls; };
+
+async function renderLibs() {
+  let libs = [];
+  try { libs = await L.list(); } catch { /* storage unavailable */ }
+  exLibs = libs;
+  $("libList").innerHTML = libs.length ? libs.map((l) => `
+    <div class="libitem"><div class="info"><div class="name">${esc(l.name)}</div>
+      <div class="muted" style="font-size:12px">${l.games.toLocaleString()} games · first ${Math.round(l.depth / 2)} moves${l.color ? ` · ${l.color}` : ""} · ${esc(l.source || "")}</div></div>
+      <button class="small danger" data-libdel="${l.id}">Delete</button></div>`).join("") : '<span class="muted">No libraries yet.</span>';
+  if (explorer?.setupOpen) exSyncSrc();
+}
+
+/** Feeds text (in arbitrary pieces) to the builders, a few hundred games at a time. */
+function makeFeeder(builders, onProgress) {
+  let buf = "";
+  const run = async (text) => {
+    for (const chunk of L.chunkPgn(text, 150)) {
+      for (const b of builders) b.add(chunk);
+      onProgress();
+      await sleep(0);
+      if (builders.every((b) => b.full())) return true;
+    }
+    return false;
+  };
+  return {
+    async push(piece) {
+      buf += piece;
+      const i = buf.lastIndexOf("\n\n[Event ");
+      if (i < 0) return false;
+      const head = buf.slice(0, i); buf = buf.slice(i);
+      return run(head);
+    },
+    async end() { const rest = buf; buf = ""; return rest.trim() ? run(rest) : false; },
+  };
+}
+
+async function readStream(res, signal, feeder) {
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  for (;;) {
+    if (signal.aborted) throw new DOMException("cancelled", "AbortError");
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (await feeder.push(dec.decode(value, { stream: true }))) { reader.cancel().catch(() => {}); return; }
+  }
+  await feeder.end();
+}
+
+async function importLibrary() {
+  if (libJob) return;
+  const kind = $("libSrc").value;
+  const depth = Math.max(3, Math.min(40, Number($("libDepth").value) || 15)) * 2;
+  const maxGames = Math.max(10, Number($("libMax").value) || 5000);
+  const user = $("libUser").value.trim();
+  const colorSel = $("libColor").value;
+  let name = $("libName").value.trim();
+  if (kind !== "file" && !/^[A-Za-z0-9_-]{2,40}$/.test(user)) return libMsg("Enter a valid username.", "bad");
+  if (kind === "file" && !$("libFile").files[0]) return libMsg("Choose a PGN file first.", "bad");
+  const colors = kind === "file" ? [null] : colorSel === "both" ? ["white", "black"] : [colorSel];
+  const builders = colors.map((c) => L.createBuilder({ depth, maxGames, user: kind === "file" ? "" : user, color: c, minElo: kind === "file" ? Number($("libElo").value) || 0 : 0 }));
+  const job = libJob = { abort: new AbortController() };
+  $("libGo").disabled = true; $("libCancel").classList.remove("hidden");
+  const progress = () => libMsg(`Reading games… ${builders[0].stats.seen.toLocaleString()} read, ${builders.map((b) => b.stats.used.toLocaleString()).join(" / ")} added.`);
+  const feeder = makeFeeder(builders, progress);
+  try {
+    if (kind === "file") {
+      const f = $("libFile").files[0]; name = name || f.name.replace(/\.[^.]+$/, "");
+      for (let off = 0; off < f.size; off += 4 << 20) {
+        if (job.abort.signal.aborted) throw new DOMException("cancelled", "AbortError");
+        if (await feeder.push(await f.slice(off, off + (4 << 20)).text())) break;
+      }
+      await feeder.end();
+    } else if (kind === "lichess") {
+      const q = new URLSearchParams({ max: String(maxGames), moves: "true", tags: "true", clocks: "false", evals: "false", opening: "false" });
+      if ($("libRated").checked) q.set("rated", "true");
+      if ($("libSpeed").value) q.set("perfType", $("libSpeed").value);
+      if (colorSel !== "both") q.set("color", colorSel);
+      libMsg("Contacting Lichess…");
+      const res = await fetch(`https://lichess.org/api/games/user/${encodeURIComponent(user)}?${q}`, { headers: { Accept: "application/x-chess-pgn" }, signal: job.abort.signal });
+      if (res.status === 404) throw new Error(`Lichess has no user called "${user}".`);
+      if (res.status === 429) throw new Error("Lichess says to slow down (too many requests). Wait a minute and try again.");
+      if (!res.ok) throw new Error(`Lichess returned an error (${res.status}).`);
+      await readStream(res, job.abort.signal, feeder);
+    } else {
+      libMsg("Contacting chess.com…");
+      const get = async (url) => {
+        const r = await fetch(url, { signal: job.abort.signal });
+        if (r.status === 404) throw new Error(`chess.com has no user called "${user}".`);
+        if (r.status === 429) throw new Error("chess.com says to slow down. Wait a minute and try again.");
+        if (!r.ok) throw new Error(`chess.com returned an error (${r.status}).`);
+        return r.json();
+      };
+      const archives = (await get(`https://api.chess.com/pub/player/${encodeURIComponent(user.toLowerCase())}/games/archives`)).archives || [];
+      if (!archives.length) throw new Error("That chess.com account has no games.");
+      const speed = $("libSpeed").value, wantRated = $("libRated").checked;
+      for (let i = archives.length - 1; i >= 0; i--) {                    // newest month first, one request at a time
+        libMsg(`Downloading month ${archives.length - i} of ${archives.length}… ${builders.map((b) => b.stats.used.toLocaleString()).join(" / ")} games added.`);
+        const month = await get(archives[i]);
+        const pgns = (month.games || []).filter((g) => g.pgn && g.rules === "chess" && (!wantRated || g.rated) &&
+          (!speed || g.time_class === speed || (speed === "classical" && g.time_class === "daily"))).map((g) => g.pgn);
+        if (pgns.length && await feeder.push(pgns.join("\n\n") + "\n\n")) break;
+        if (builders.every((b) => b.full())) break;
+      }
+      await feeder.end();
+    }
+    const source = kind === "file" ? "PGN file" : `${kind === "lichess" ? "Lichess" : "chess.com"} · ${user}`;
+    const made = [];
+    for (let i = 0; i < builders.length; i++) {
+      const b = builders[i];
+      if (!b.stats.used) continue;
+      const nm = kind === "file" ? name : `${name || user + " (" + (kind === "lichess" ? "Lichess" : "chess.com") + ")"}${colors[i] ? " as " + (colors[i] === "white" ? "White" : "Black") : ""}`;
+      await L.save(b.finish(nm, source)); made.push(`${nm}: ${b.stats.used.toLocaleString()} games`);
+    }
+    if (!made.length) throw new Error(`No usable games found (${builders[0].stats.seen.toLocaleString()} read). Games need a result and the standard starting position${kind === "file" ? ", and must pass the rating filter" : ""}.`);
+    libMsg(`Saved: ${made.join("; ")}. Pick "Game library" in the Opening explorer to use it.`, "good");
+    $("libName").value = "";
+    await renderLibs();
+  } catch (e) {
+    if (e.name === "AbortError") libMsg("Import cancelled.");
+    else if (e instanceof TypeError) libMsg(kind === "chesscom"
+      ? "Couldn't reach chess.com from the browser (it may block this). Use tools/download_games.py on a computer, then import the PGN file."
+      : "Couldn't reach the server. Check your connection.", "bad");
+    else libMsg(e.message, "bad");
+  } finally {
+    libJob = null; $("libGo").disabled = false; $("libCancel").classList.add("hidden");
+  }
+}
 
 // ------------------------------------------------------ collections & lines
 const sanCache = new Map();
@@ -603,7 +777,7 @@ function renderLines() {
   $("lineCount").textContent = lines.length;
   $("lineList").innerHTML = lines.length ? lines.map((l, i) => `
     <div class="line">
-      <div class="info"><div class="name">${i + 1}. ${esc(l.name)}${l.start ? `<span class="tag">Puzzle · ${E.sideToMove(l.start)} to move</span>` : ""}</div><div class="san">${esc(lineSan(l))}</div></div>
+      <div class="info"><div class="name">${i + 1}. ${esc(l.name)}${l.start ? `<span class="tag">Puzzle · ${E.sideToMove(l.start)} to move</span>` : ""}${l.result ? `<span class="tag res" title="Result of the game">${esc(l.result === "1/2-1/2" ? "½-½" : l.result)}</span>` : ""}</div><div class="san">${esc(lineSan(l))}</div></div>
       <button class="small" data-practice="${l.id}">Practice</button>
       <button class="small secondary" data-edit="${l.id}">Edit</button>
       <button class="small danger" data-delete="${l.id}" title="Delete this line">✕</button>
@@ -1010,6 +1184,18 @@ async function showStorage() {
 }
 
 // ------------------------------------------------------------------- wiring
+$("libSrc").onchange = () => { const f = $("libSrc").value === "file"; $("libFileRow").classList.toggle("hidden", !f); $("libUserRow").classList.toggle("hidden", f); $("libMax").value = f ? 20000 : 5000; };
+$("libGo").onclick = importLibrary;
+$("libCancel").onclick = () => libJob?.abort.abort();
+$("libList").onclick = async (e) => {
+  const b = e.target.closest("[data-libdel]");
+  if (!b) return;
+  const l = exLibs.find((x) => String(x.id) === b.dataset.libdel);
+  if (!l || !confirm(`Delete the library "${l.name}"?`)) return;
+  await L.remove(l.id); await renderLibs();
+};
+document.querySelectorAll('input[name="exSrc"]').forEach((r) => { r.onchange = exSyncSrc; });
+$("exLibSel").onchange = exSyncSrc;
 $("explorerBtn").onclick = openExplorer;
 document.querySelectorAll('input[name="exSide"]').forEach((r) => { r.onchange = () => exRenderColls(new Set(S.collections().filter((c) => sideOf(c) === exSide()).map((c) => c.id))); });
 $("exColls").onchange = exUpdateStart;
@@ -1082,6 +1268,7 @@ async function main() {
   await S.load();
   refresh();
   showStorage();
+  renderLibs();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 main();

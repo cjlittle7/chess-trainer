@@ -43,15 +43,25 @@
         <p class="muted" style="margin:0 0 10px">Play through your openings move by move. Every move your saved lines play from the
           current position is shown on the board. Once only one line is left, it tests you as normal.</p>
         <div class="row" style="margin-bottom:10px">
+          <label><input type="radio" name="exSrc" value="colls" checked> My collections</label>
+          <label><input type="radio" name="exSrc" value="lib"> Game library</label>
+        </div>
+        <div class="row" style="margin-bottom:10px">
           <label><input type="radio" name="exSide" value="white" checked> I play White</label>
           <label><input type="radio" name="exSide" value="black"> I play Black</label>
         </div>
-        <div class="row" style="margin-bottom:6px">
-          <span class="muted">Collections to use:</span>
-          <button id="exAll" class="secondary small">Select all</button>
-          <button id="exNone" class="secondary small">Select none</button>
+        <div id="exCollBox">
+          <div class="row" style="margin-bottom:6px">
+            <span class="muted">Collections to use:</span>
+            <button id="exAll" class="secondary small">Select all</button>
+            <button id="exNone" class="secondary small">Select none</button>
+          </div>
+          <div id="exColls" class="excolls"></div>
         </div>
-        <div id="exColls" class="excolls"></div>
+        <div id="exLibBox" class="hidden">
+          <select id="exLibSel"></select>
+          <label class="muted row">Hide moves played in fewer than <input type="number" id="exMin" min="1" value="1" style="width:70px;margin:0"> games</label>
+        </div>
         <div id="exSetupMsg" class="muted" style="margin:8px 0"></div>
         <div class="row"><button id="exStart">Start exploring</button><button id="exCancel" class="secondary">Cancel</button></div>
       </div>
@@ -193,6 +203,41 @@
           </div>
           <div id="impMsg" style="margin-top:8px"><small>Each game, and each variation within a game, becomes its own line.
             Duplicates and lines that are just the start of a longer line are merged automatically.</small></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <details id="libBox">
+        <summary>Game libraries (master games, your own games)</summary>
+        <div style="margin-top:12px">
+          <p class="muted" style="margin-top:0">A library holds many real games as an opening tree, so the explorer can show how often each move was
+            played and how often White, Black or neither won. Only the first moves of each game are kept.</p>
+          <div id="libList" style="margin-bottom:12px"></div>
+          <h2>Add games</h2>
+          <select id="libSrc">
+            <option value="file">From a PGN file</option>
+            <option value="lichess">From a Lichess username</option>
+            <option value="chesscom">From a chess.com username</option>
+          </select>
+          <input type="text" id="libName" placeholder="Library name (optional)">
+          <div id="libFileRow"><input type="file" id="libFile" accept=".pgn,.txt,text/plain,application/x-chess-pgn" style="margin-bottom:8px">
+            <label class="muted row" style="margin-bottom:8px">Only games where both players are rated at least <input type="number" id="libElo" min="0" value="0" style="width:80px;margin:0"></label></div>
+          <div id="libUserRow" class="hidden">
+            <input type="text" id="libUser" placeholder="Username" autocapitalize="off" autocomplete="off" spellcheck="false">
+            <select id="libColor"><option value="both">All my games (two libraries: as White and as Black)</option><option value="white">Only games I played as White</option><option value="black">Only games I played as Black</option></select>
+            <select id="libSpeed"><option value="">Any time control</option><option value="bullet">Bullet</option><option value="blitz">Blitz</option><option value="rapid">Rapid</option><option value="classical">Classical (Lichess) / daily (chess.com)</option></select>
+            <label class="check"><input type="checkbox" id="libRated" checked> Rated games only</label>
+          </div>
+          <div class="row" style="margin:8px 0">
+            <label class="muted">Moves kept per game <input type="number" id="libDepth" min="3" max="40" value="15" style="width:70px;margin:0 0 0 4px"></label>
+            <label class="muted">Max games <input type="number" id="libMax" min="10" value="5000" style="width:90px;margin:0 0 0 4px"></label>
+          </div>
+          <div class="row"><button id="libGo">Import</button><button id="libCancel" class="secondary hidden">Cancel</button></div>
+          <div id="libMsg" style="margin-top:8px;font-size:14px"></div>
+          <small class="muted">Big downloads are slow on a phone and use its storage. Lichess lets a username download run at roughly 20-30 games
+            per second. If chess.com can't be reached from the browser, use <code>tools/download_games.py</code> on a computer and import the PGN file it makes.
+            Compressed files (.zip, .zst) must be unpacked first.</small>
         </div>
       </details>
     </div>

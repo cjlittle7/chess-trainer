@@ -89,8 +89,10 @@ export function linesFromPgn(text) {
     const pos0 = sp.unwrap();
     let start;
     try { start = E.normalizeStart(makeFen(pos0.toSetup())); } catch { errors++; continue; }
-    const paths = [];
-    const walk = (node, pos, path) => {
+    const paths = [], mainIdx = [];                          // mainIdx: index of the mainline path (the game actually played)
+    let mainDone = false;
+    const resultTag = ["1-0", "0-1", "1/2-1/2"].includes((game.headers.get("Result") || "").trim()) ? game.headers.get("Result").trim() : null;
+    const walk = (node, pos, path, isMain) => {
       let advanced = false;
       for (const child of node.children) {
         const move = parseSan(pos, child.data.san);
@@ -99,14 +101,15 @@ export function linesFromPgn(text) {
         const next = pos.clone();
         const uci = E.standardUci(next, move);
         next.play(move);
-        walk(child, next, [...path, uci]);
+        walk(child, next, [...path, uci], isMain && child === node.children[0]);
       }
-      if (!advanced && path.length) paths.push(path);
+      if (!advanced && path.length) { if (isMain && !mainDone) { mainIdx.push(paths.length); mainDone = true; } paths.push(path); }
     };
-    walk(game.moves, pos0, []);
+    walk(game.moves, pos0, [], true);
     let title = (game.headers.get("Event") || "").trim();
     if (["", "?", "Casual Game"].includes(title)) title = `Game ${games}`;
-    paths.forEach((moves, i) => lines.push({ name: paths.length === 1 ? title : `${title} (${i + 1}/${paths.length})`, moves, ...(start ? { start } : {}) }));
+    paths.forEach((moves, i) => lines.push({ name: paths.length === 1 ? title : `${title} (${i + 1}/${paths.length})`, moves, ...(start ? { start } : {}),
+      ...(resultTag && mainIdx[0] === i && !start ? { result: resultTag } : {}) }));
   }
   return { lines, games, errors };
 }
@@ -126,7 +129,7 @@ function prune(c) {
 }
 
 function addCollection(name, color, parsedLines) {
-  const c = { id: newId(), name, color, lines: parsedLines.map((l) => ({ id: newId(), name: l.name, moves: l.moves, ...(l.start ? { start: l.start } : {}) })) };
+  const c = { id: newId(), name, color, lines: parsedLines.map((l) => ({ id: newId(), name: l.name, moves: l.moves, ...(l.start ? { start: l.start } : {}), ...(l.result ? { result: l.result } : {}) })) };
   data.collections.push(c);
   prune(c);
   return c;
@@ -160,7 +163,7 @@ export async function addPgn(collId, pgn) {
   if (!(pgn || "").trim()) throw new Error("Paste some PGN first.");
   const parsed = linesFromPgn(pgn);
   if (!parsed.lines.length) throw new Error("No playable moves found in that PGN.");
-  for (const l of parsed.lines) c.lines.push({ id: newId(), name: l.name, moves: l.moves, ...(l.start ? { start: l.start } : {}) });
+  for (const l of parsed.lines) c.lines.push({ id: newId(), name: l.name, moves: l.moves, ...(l.start ? { start: l.start } : {}), ...(l.result ? { result: l.result } : {}) });
   prune(c);
   bookCache.delete(c.id);
   await persist();
@@ -201,6 +204,7 @@ export async function saveLine({ collId, newCollection, name, moves, start, line
   if (lineId !== null) {
     line = c.lines.find((l) => l.id === lineId);
     if (!line) throw new Error("Line not found.");
+    if (line.moves.join(" ") !== moves.join(" ")) delete line.result;      // an edited game no longer has its original result
     line.moves = moves.slice();
     if (start) line.start = start; else delete line.start;
     if (name) line.name = name;
@@ -237,7 +241,8 @@ export async function importJson(text) {
         if (!l || !Array.isArray(l.moves) || !l.moves.length) throw new Error();
         const start = E.normalizeStart(typeof l.start === "string" ? l.start : undefined);
         E.replay(l.moves, start);
-        lines.push({ id: nextId++, name: String(l.name || "Line").slice(0, 200), moves: l.moves.slice(), ...(start ? { start } : {}) });
+        lines.push({ id: nextId++, name: String(l.name || "Line").slice(0, 200), moves: l.moves.slice(), ...(start ? { start } : {}),
+          ...(["1-0", "0-1", "1/2-1/2"].includes(l.result) ? { result: l.result } : {}) });
       } catch { dropped++; }
     }
     lineTotal += lines.length;

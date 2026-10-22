@@ -36,6 +36,28 @@ Under the collection menu, **Play as** White/Black switches which side you play 
 collection remembers its choice for the rest of the session, including after a reload, and it is used by drills, the explorer and the
 line editor. It resets when you close the app; the colour a collection was recorded for is never changed.
 
+## Game libraries and results
+
+Open **Game libraries** near the bottom of the page. A library turns many real games into an opening tree (the first 15 moves of each by
+default), so the explorer can show how often every move was played and how often White won, it was drawn, or Black won (the bar and the
+percentages are White / draw / Black).
+
+- **From a PGN file:** pick a file of games (master games, a database export, your own export). Optionally keep only games where both
+  players have a minimum rating. Unpack .zip / .zst files first.
+- **From a Lichess username:** downloads that player's games straight into the app. Choose all games (one library as White and one as
+  Black), only White or only Black, a time control, and rated only.
+- **From a chess.com username:** the same, via chess.com's public game archives. If the browser can't reach chess.com, run
+  `python tools/download_games.py chesscom your_name -o games.pgn` on a computer and import that file instead (the script also does Lichess).
+- In the explorer, pick **Game library** as the source. A library made from one colour of your games fixes your side to that colour.
+  Opponent replies work as before (drag a piece, buttons, or **Random choice**, which follows how often each reply was played).
+  The explorer doesn't switch to testing mode for libraries.
+- Games are only used if they have a result and start from the standard position. Libraries live in this browser only and are not part
+  of the backup file; re-import them if you move devices.
+
+Full games in your own collections now remember their result too (`[Result]` in the PGN). It shows as a tag in the line list, as a
+White / draw / Black bar beside each explorer move, and when a drill or explorer line ends. Only the main line of a game gets the result,
+not its variations.
+
 ## Puzzles (custom positions)
 
 A line can start from any position, not just the opening position. Puzzles live in your normal collections.
