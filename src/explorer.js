@@ -121,7 +121,7 @@ export function turn(ex) {
 
 /** How many lines still continue from here (explore phase) */
 export function linesLeft(ex) {
-  if (ex.lib) return L.movesAt(ex.lib, L.hashKey(ex.key)).reduce((a, m) => a + m.n, 0);
+  if (ex.lib) return L.gamesAt(ex.lib, L.hashKey(ex.key));
   if (ex.phase === "test") return ex.testLis.length;
   return new Set((ex.index.get(ex.key) || []).filter((e) => e.k < ex.lines[e.li].moves.length).map((e) => e.li)).size;
 }

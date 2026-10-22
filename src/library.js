@@ -56,21 +56,34 @@ export function createBuilder(opts = {}) {
     const pos = sp.unwrap();
     if (E.key(pos) !== E.key(E.newPos())) { st.skipped++; return; }              // only games from the standard start
     let node = game.moves, plies = 0;
+    const seen = new Set();                                    // a game counts once per position, even if it repeats it
     while (plies < depth && node.children.length) {
       const child = node.children[0];
       const move = parseSan(pos, child.data.san);
       if (!move) { if (plies === 0) st.errors++; break; }
-      const k = posHash(pos);
-      const uci = E.standardUci(pos.clone(), move);
-      let m = tree.get(k);
-      if (!m) tree.set(k, (m = new Map()));
-      let c = m.get(uci);
-      if (!c) m.set(uci, (c = [0, 0, 0]));
-      c[ri]++;
+      const k = posHash(pos), uci = E.standardUci(pos.clone(), move);
+      if (!seen.has(k)) {
+        seen.add(k);
+        let m = tree.get(k);
+        if (!m) tree.set(k, (m = new Map()));
+        let c = m.get(uci);
+        if (!c) m.set(uci, (c = [0, 0, 0]));
+        c[ri]++;
+      }
       pos.play(move);
       node = child; plies++;
     }
-    if (plies) st.used++; else st.skipped++;
+    if (plies) {
+      st.used++;
+      const k = posHash(pos);                                   // the game ends here (game over, or the depth limit): count it as having reached this position
+      if (!seen.has(k)) {
+        let m = tree.get(k);
+        if (!m) tree.set(k, (m = new Map()));
+        let c = m.get("");
+        if (!c) m.set("", (c = [0, 0, 0]));
+        c[ri]++;
+      }
+    } else st.skipped++;
   }
 
   return {
@@ -83,7 +96,7 @@ export function createBuilder(opts = {}) {
     finish(name, source) {
       const out = {};
       for (const [k, m] of tree) { const a = []; for (const [u, c] of m) a.push(u, c[0], c[1], c[2]); out[k] = a; }
-      return { name, source, color, depth, games: st.used, created: Date.now(), tree: out };
+      return { name, source, color, depth, games: st.used, created: Date.now(), ver: 2, tree: out };
     },
   };
 }
@@ -104,8 +117,17 @@ export function movesAt(lib, key) {
   const a = lib.tree[key];
   if (!a) return [];
   const out = [];
-  for (let i = 0; i < a.length; i += 4) out.push({ uci: a[i], w: a[i + 1], d: a[i + 2], b: a[i + 3], n: a[i + 1] + a[i + 2] + a[i + 3] });
+  for (let i = 0; i < a.length; i += 4) if (a[i] !== "") out.push({ uci: a[i], w: a[i + 1], d: a[i + 2], b: a[i + 3], n: a[i + 1] + a[i + 2] + a[i + 3] });
   return out.sort((x, y) => y.n - x.n);
+}
+
+/** How many games reached a position: those that continued from it plus those that ended there. */
+export function gamesAt(lib, key) {
+  const a = lib.tree[key];
+  if (!a) return 0;
+  let n = 0;
+  for (let i = 0; i < a.length; i += 4) n += a[i + 1] + a[i + 2] + a[i + 3];
+  return n;
 }
 
 // ------------------------------------------------------------------ storage

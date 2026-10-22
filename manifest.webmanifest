@@ -1,5 +1,5 @@
 {
-  "name": "Opening Trainer",
+  "name": "My Chess Trainer",
   "short_name": "Openings",
   "description": "Drill your chess opening lines on a draggable board, offline.",
   "start_url": "./",

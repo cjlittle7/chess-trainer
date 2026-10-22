@@ -6,7 +6,7 @@ import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
 
-const VERSION = "2.0.0";
+const VERSION = "2.0.1";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -1154,7 +1154,7 @@ async function exportBackup() {
   const name = `opening-trainer-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([S.exportJson()], name, { type: "application/json" });
   try {                                            // iPhone: the share sheet (Files, AirDrop, iCloud Drive…)
-    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "Opening Trainer backup" }); dataMsg("Backup shared."); return; }
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "My Chess Trainer backup" }); dataMsg("Backup shared."); return; }
   } catch (e) { if (e.name === "AbortError") return; }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(file); a.download = name;
@@ -1264,7 +1264,7 @@ async function main() {
   initBoard();
   buildPalette();
   applySpeed(speed);
-  $("version").textContent = `Opening Trainer v${VERSION}`;
+  $("version").textContent = `My Chess Trainer v${VERSION}`;
   await S.load();
   refresh();
   showStorage();
