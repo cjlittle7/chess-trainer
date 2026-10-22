@@ -18,8 +18,15 @@
   <button id="tabTrain" class="tab active" aria-pressed="true">Trainer</button>
   <button id="tabStudy" class="tab" aria-pressed="false">STUDY BREAK</button>
   <button id="tabBoard" class="tab" aria-pressed="false">LEADERBOARD</button>
-  <span id="expChip" class="expchip" title="Training EXP"></span>
 </nav>
+<div class="statbar" id="statBar">
+  <span id="lvlChip" class="lvl" title="Level"></span>
+  <span class="lvbar" id="lvlBar" title=""><i id="lvlFill"></i></span>
+  <span id="lvlText" class="muted lvltext"></span>
+  <span id="expChip" title="Training EXP"></span>
+  <span id="goldChip" title="Gold"></span>
+  <span id="streakChip" class="hidden"></span>
+</div>
 <div class="layout" id="trainerView">
   <div class="board-col"><div id="board" class="cg-wrap"></div></div>
 
@@ -313,6 +320,7 @@
     <button data-b="exp" class="small">EXP</button><button data-b="lines" class="small secondary">Lines</button><button data-b="puzzles" class="small secondary">Puzzles</button><button data-b="tomatoes" class="small secondary">Tomatoes</button><button data-b="avglen" class="small secondary">Avg perfect length</button>
   </div>
   <div id="boardMe" class="boardme"></div>
+  <h2 id="boardTitle" class="boardtitle"></h2>
   <table class="board" id="boardTable"></table>
   <small id="boardNote" class="muted"></small>
   <div><button id="boardExit" class="secondary" style="margin-top:14px">Back to trainer</button></div>
