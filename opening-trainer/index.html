@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>My Chess Trainer</title>
+<meta name="theme-color" content="#1f1d1b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Chess Trainer">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="tabs" id="tabs">
+  <button id="tabTrain" class="tab active" aria-pressed="true">Trainer</button>
+  <button id="tabStudy" class="tab" aria-pressed="false">STUDY BREAK</button>
+</nav>
+<div class="layout" id="trainerView">
+  <div class="board-col"><div id="board" class="cg-wrap"></div></div>
+
+  <div class="side-col">
+    <header><h1>My Chess Trainer</h1></header>
+
+    <div class="panel">
+      <div id="progress"></div>
+      <div id="status">Choose a collection and press a practice button.</div>
+      <div class="row">
+        <button id="hintBtn" class="secondary" disabled>Hint</button>
+        <button id="skipBtn" class="secondary" disabled>Skip line</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="muted" for="speedSel">Opponent speed</label>
+        <select id="speedSel" style="width:auto;margin:0">
+          <option value="normal">Normal</option><option value="fast">Fast</option><option value="instant">Instant</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="result" class="panel hidden"></div>
+
+    <div id="exPanel" class="panel hidden">
+      <h2>Opening explorer</h2>
+      <div id="exSetup">
+        <p class="muted" style="margin:0 0 10px">Play through your openings move by move. Every move your saved lines play from the
+          current position is shown on the board. Once only one line is left, it tests you as normal.</p>
+        <div class="row" style="margin-bottom:10px">
+          <label><input type="radio" name="exSrc" value="colls" checked> My collections</label>
+          <label><input type="radio" name="exSrc" value="lib"> Game library</label>
+        </div>
+        <div class="row" style="margin-bottom:10px">
+          <label><input type="radio" name="exSide" value="white" checked> I play White</label>
+          <label><input type="radio" name="exSide" value="black"> I play Black</label>
+        </div>
+        <div id="exCollBox">
+          <div class="row" style="margin-bottom:6px">
+            <span class="muted">Collections to use:</span>
+            <button id="exAll" class="secondary small">Select all</button>
+            <button id="exNone" class="secondary small">Select none</button>
+          </div>
+          <div id="exColls" class="excolls"></div>
+        </div>
+        <div id="exLibBox" class="hidden">
+          <select id="exLibSel"></select>
+          <label class="muted row">Hide moves played in fewer than <input type="number" id="exMin" min="1" value="1" style="width:70px;margin:0"> games</label>
+        </div>
+        <div id="exSetupMsg" class="muted" style="margin:8px 0"></div>
+        <div class="row"><button id="exStart">Start exploring</button><button id="exCancel" class="secondary">Cancel</button></div>
+      </div>
+      <div id="exRun" class="hidden">
+        <div id="exMoves" class="exmoves"></div>
+        <div id="exReviewRow" class="row hidden" style="margin-bottom:8px"><button id="exReturn">Return to position</button><button id="exFrom" class="secondary">Explore from here</button></div>
+        <label class="check" style="margin:0 0 6px"><input type="checkbox" id="exHintsChk" checked> Show move hints and continued lines</label>
+        <label class="check" style="margin:0 0 6px"><input type="checkbox" id="exAutoChk" checked> Auto-play the opponent's only move</label>
+        <div id="exInfo" class="muted"></div>
+        <div id="exOne" class="hidden exone"></div>
+        <button id="exGames" class="secondary small hidden" style="margin-top:6px">Games from here</button>
+        <div id="exGameList" class="hidden"></div>
+        <div id="exHints" class="exlist"></div>
+        <div id="exChoose" class="hidden">
+          <div class="muted" style="margin-bottom:6px">Your opponent could play any of these. Drag one of their pieces on the board, or pick one here:</div>
+          <div id="exChoices" class="exlist"></div>
+          <button id="exRandom" class="secondary" style="margin-top:8px">Random choice</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="exCopy" class="secondary">Copy PGN</button>
+          <button id="exNewLine" class="secondary">Create line from here</button>
+        </div>
+        <div id="exCopyMsg" style="margin-top:6px;font-size:14px"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="exBack" class="secondary">← Back</button>
+          <button id="exRestart" class="secondary">Restart</button>
+          <button id="exClose" class="secondary">Close explorer</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Collection</h2>
+      <select id="repSelect"></select>
+      <div class="row" id="sideRow" style="margin-bottom:10px">
+        <span class="muted">Play as:</span>
+        <button id="sideWhite" class="small" aria-pressed="true">White</button>
+        <button id="sideBlack" class="small secondary" aria-pressed="false">Black</button>
+        <small id="sideNote"></small>
+      </div>
+      <div class="row">
+        <button id="allBtn">Practice all lines in order</button>
+        <button id="randomBtn" class="secondary">Random drill</button>
+        <button id="recordBtn" class="secondary">Record a line</button>
+        <button id="puzzleBtn" class="secondary">Record a puzzle</button>
+        <button id="explorerBtn" class="secondary">Opening explorer</button>
+      </div>
+      <label class="check"><input type="checkbox" id="shuffleChk"> Shuffle line order</label>
+      <div class="row" style="margin-top:10px"><button id="newCollBtn" class="secondary small">+ New empty collection</button></div>
+      <div class="row" style="margin-top:10px"><button id="deleteBtn" class="danger small">Delete collection</button></div>
+    </div>
+
+    <div id="setupPanel" class="panel hidden">
+      <h2>Position setup</h2>
+      <p class="muted" style="margin:0 0 10px">Drag a piece from the palette onto the board, or tap a piece and then tap squares to place it.
+        Drag a piece off the board to remove it.</p>
+      <div id="palette" class="palette cg-wrap" role="toolbar" aria-label="Piece palette"></div>
+      <div class="row" style="margin:10px 0">
+        <button id="suStandard" class="secondary small">Standard position</button>
+        <button id="suEmpty" class="secondary small">Empty board</button>
+        <button id="suFlip" class="secondary small">Flip board</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="muted" for="suTurn">To move:</label>
+        <select id="suTurn" style="width:auto;margin:0"><option value="white">White</option><option value="black">Black</option></select>
+      </div>
+      <div class="row muted" style="margin-bottom:10px">Castling:
+        <label><input type="checkbox" id="suK"> White O-O</label>
+        <label><input type="checkbox" id="suQ"> White O-O-O</label>
+        <label><input type="checkbox" id="suk"> Black O-O</label>
+        <label><input type="checkbox" id="suq"> Black O-O-O</label>
+      </div>
+      <input type="text" id="suFen" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="FEN">
+      <div class="row" style="margin-bottom:10px">
+        <button id="suLoadFen" class="secondary small">Load FEN</button>
+        <button id="suCopyFen" class="secondary small">Copy FEN</button>
+      </div>
+      <details id="suLineBox" style="margin-bottom:10px">
+        <summary>Start from a position in one of this collection's lines</summary>
+        <div style="margin-top:8px">
+          <select id="suLine"></select>
+          <input type="range" id="suPly" min="0" max="0" value="0" style="width:100%">
+          <div id="suPlyLabel" class="muted"></div>
+          <button id="suUseLine" class="secondary small" style="margin-top:6px">Use this position</button>
+        </div>
+      </details>
+      <div id="suMsg" class="muted" style="margin-bottom:10px"></div>
+      <div class="row">
+        <button id="suRecord">Start recording</button>
+        <button id="suCancel" class="secondary">Cancel</button>
+      </div>
+    </div>
+
+    <div id="editorPanel" class="panel hidden">
+      <h2>Line editor</h2>
+      <p class="muted" style="margin:0 0 10px">Play the moves for <em>both</em> sides on the board. Made a mistake? Use Undo,
+        or tap any move in the list to delete it and everything after it.</p>
+      <div id="edStartRow" class="row muted hidden" style="margin-bottom:8px">
+        <span id="edStartLabel"></span>
+        <button id="edChangePos" class="small secondary">Change position</button>
+      </div>
+      <select id="edTarget"></select>
+      <div id="edNew" class="hidden">
+        <input type="text" id="edNewName" placeholder="New collection name">
+        <select id="edNewColor"><option value="white">I play White</option><option value="black">I play Black</option></select>
+      </div>
+      <input type="text" id="edName" placeholder="Line name (optional)">
+      <div id="edMoves" class="moves"></div>
+      <div id="edPromo" class="hidden" style="margin-bottom:8px">
+        <span class="muted">Promote to:</span>
+        <button class="small" data-p="q">Queen</button> <button class="small" data-p="r">Rook</button>
+        <button class="small" data-p="b">Bishop</button> <button class="small" data-p="n">Knight</button>
+        <button class="small secondary" data-cancel="1">Cancel</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <button id="edUndo" class="secondary" disabled>Undo</button>
+        <button id="edRedo" class="secondary" disabled>Redo</button>
+        <button id="edClear" class="secondary" disabled>Clear</button>
+      </div>
+      <div class="row">
+        <button id="edSave">Save line</button>
+        <button id="edClose" class="secondary">Close editor</button>
+      </div>
+      <div id="edMsg"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Lines in this collection (<span id="lineCount">0</span>)</h2>
+      <div id="lineList"></div>
+    </div>
+
+    <div class="panel">
+      <details id="createBox">
+        <summary>Create or extend a collection (paste PGN)</summary>
+        <div style="margin-top:12px">
+          <input type="text" id="impName" placeholder="New collection name, e.g. Caro-Kann">
+          <select id="impColor"><option value="white">I play White</option><option value="black">I play Black</option></select>
+          <textarea id="impPgn" placeholder="Paste one or more games. Variations (in parentheses) become separate lines.&#10;&#10;1. e4 c6 2. d4 d5 3. Nc3 (3. e5 Bf5) 3... dxe4 *"></textarea>
+          <div class="row">
+            <button id="createBtn">Create new collection</button>
+            <button id="emptyBtn" class="secondary">Create empty collection</button>
+            <button id="extendBtn" class="secondary">Add to selected collection</button>
+          </div>
+          <div id="impMsg" style="margin-top:8px"><small>Each game, and each variation within a game, becomes its own line.
+            Duplicates and lines that are just the start of a longer line are merged automatically.</small></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <details>
+        <summary>Appearance</summary>
+        <div style="margin-top:12px">
+          <label class="muted" for="themeBoard">Board</label>
+          <select id="themeBoard"><option value="brown">Brown</option><option value="green">Green</option><option value="blue">Blue</option>
+            <option value="gray">Gray</option><option value="purple">Purple</option><option value="night">Night</option></select>
+          <label class="muted" for="themePieces">Pieces</label>
+          <select id="themePieces"><option value="classic">Classic</option><option value="merida">Merida</option><option value="chessnut">Chessnut</option>
+            <option value="rhosgfx">Modern</option><option value="celtic">Celtic</option><option value="barnes">Barnes (custom)</option></select>
+          <small>Piece artwork credits: see the README.</small>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <details id="libBox">
+        <summary>Game libraries (master games, your own games)</summary>
+        <div style="margin-top:12px">
+          <p class="muted" style="margin-top:0">A library holds many real games as an opening tree, so the explorer can show how often each move was
+            played and how often White, Black or neither won. Only the first moves of each game are kept.</p>
+          <div id="libList" style="margin-bottom:12px"></div>
+          <h2>Add games</h2>
+          <select id="libSrc">
+            <option value="file">From a PGN file</option>
+            <option value="lichess">From a Lichess username</option>
+            <option value="chesscom">From a chess.com username</option>
+          </select>
+          <input type="text" id="libName" placeholder="Library name (optional)">
+          <div id="libFileRow"><input type="file" id="libFile" accept=".pgn,.txt,text/plain,application/x-chess-pgn" style="margin-bottom:8px">
+            <label class="muted row" style="margin-bottom:8px">Only games where both players are rated at least <input type="number" id="libElo" min="0" value="0" style="width:80px;margin:0"></label></div>
+          <div id="libUserRow" class="hidden">
+            <input type="text" id="libUser" placeholder="Username" autocapitalize="off" autocomplete="off" spellcheck="false">
+            <select id="libColor"><option value="both">All my games (two libraries: as White and as Black)</option><option value="white">Only games I played as White</option><option value="black">Only games I played as Black</option></select>
+            <select id="libSpeed"><option value="">Any time control</option><option value="bullet">Bullet</option><option value="blitz">Blitz</option><option value="rapid">Rapid</option><option value="classical">Classical (Lichess) / daily (chess.com)</option></select>
+            <label class="check"><input type="checkbox" id="libRated" checked> Rated games only</label>
+          </div>
+          <div class="row" style="margin:8px 0">
+            <label class="muted">Moves kept per game <input type="number" id="libDepth" min="3" max="40" value="15" style="width:70px;margin:0 0 0 4px"></label>
+            <label class="muted">Max games <input type="number" id="libMax" min="10" value="5000" style="width:90px;margin:0 0 0 4px"></label>
+          </div>
+          <div class="row"><button id="libGo">Import</button><button id="libCancel" class="secondary hidden">Cancel</button></div>
+          <div id="libMsg" style="margin-top:8px;font-size:14px"></div>
+          <small class="muted">Big downloads are slow on a phone and use its storage. Lichess lets a username download run at roughly 20-30 games
+            per second. If chess.com can't be reached from the browser, use <code>tools/download_games.py</code> on a computer and import the PGN file it makes.
+            Compressed files (.zip, .zst) must be unpacked first.</small>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <details>
+        <summary>Backup &amp; sync</summary>
+        <div style="margin-top:12px">
+          <p class="muted" style="margin-top:0">Your collections are stored in this browser, on this device only. Export a backup
+            file to keep a copy or to move your lines to another device.</p>
+          <div class="row">
+            <button id="exportBtn">Export backup</button>
+            <button id="importBtn" class="secondary">Import backup…</button>
+            <input type="file" id="importFile" accept=".json,application/json" hidden>
+          </div>
+          <div id="dataMsg"></div>
+          <small id="storageInfo"></small>
+        </div>
+      </details>
+    </div>
+    <small id="version"></small>
+  </div>
+</div>
+<div id="studyView" class="study hidden">
+  <h1>Study break</h1>
+  <p class="muted">Take a breather. Press the button.</p>
+  <div class="stage" id="studyStage">
+    <img src="assets/study/photo.jpg" alt="A chess player resting his head on his hand" width="465" height="495" draggable="false">
+    <div id="studyOverlay" class="overlay" aria-hidden="true"></div>
+  </div>
+  <button id="tomatoBtn" class="tomato-btn">TOMATO</button>
+  <div id="tomatoCount" class="tomato-count" aria-live="polite"></div>
+  <small id="tomatoNote" class="muted"></small>
+  <button id="studyExit" class="secondary" style="margin-top:14px">Exit study break</button>
+</div>
+<noscript>This app needs JavaScript.</noscript>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

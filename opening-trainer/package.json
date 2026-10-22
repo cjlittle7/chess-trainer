@@ -1,0 +1,16 @@
+{
+  "name": "opening-trainer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --minify --format=iife --target=safari15 --outfile=app.js && node tools/build-css.mjs"
+  },
+  "dependencies": {
+    "@lichess-org/chessground": "10.4.2",
+    "chessops": "^0.14.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
