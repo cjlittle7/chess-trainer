@@ -51,8 +51,9 @@ percentages are White / draw / Black).
 - In the explorer, pick **Game library** as the source. A library made from one colour of your games fixes your side to that colour.
   Opponent replies work as before (drag a piece, buttons, or **Random choice**, which follows how often each reply was played).
   The explorer doesn't switch to testing mode for libraries.
-- **Finding the games:** at a position that only one game reaches, a green magnifying-glass button opens that game on Lichess or
-  chess.com in a new tab. **Games from here** lists the newest 50 games that reached the current position, each with its link. Links come
+- **Finding the games:** the newest 50 games that reached the current position are listed automatically (**Hide games** / **Show games**
+  to toggle, remembered). Each has a green magnifying-glass button that opens it on Lichess or chess.com in a new tab, and a grey **>** button
+  that plays that game's next move on the board, for either side. At a position only one game reaches, the same two buttons appear in a card above the list. Links come
   from the game's `Site` (Lichess) or `Link` (chess.com) tag; files without them show just the players, rating, result and date.
   Libraries made before v2.2.0 need to be deleted and imported again to get this.
 - Games are only used if they have a result and start from the standard position. Libraries live in this browser only and are not part
@@ -92,6 +93,8 @@ Press **Opening explorer** in the Collection panel. Choose whether you play Whit
 - Tap any move in the sequence to view that position on the board; your explorer line is kept, and **Return to position** brings you back.
 - **Copy PGN** puts the moves up to the position on the board on your clipboard, ready to paste into chess.com's import.
 - **Create line from here** opens the line editor with those moves already entered; keep playing, pick a collection and Save line. (This closes the explorer.)
+- Untick **Auto-play the opponent's only move** to use the explorer with nothing played for you: even when your opponent has just one move,
+  you play it yourself (drag their piece or press the button). It can be switched on again at any time and is remembered.
 - **Back** takes a move back, **Restart** starts again, and a summary appears at the end of each line.
 - Puzzles (custom-position lines) are not used.
 
@@ -114,7 +117,8 @@ Open **Appearance** to pick a board colour and a piece set (saved on this device
 all taken from the Lichess project. See `assets/pieces/CREDITS.md`.
 
 Explorer arrows are weighted by popularity: the more games (or lines) play a move, the thicker and more opaque its arrow, on a
-logarithmic scale relative to the most-played move.
+logarithmic scale relative to the most-played move (a move played 10 times less than the top move gets half the weight, 100 times less
+gets the minimum).
 
 ## Licence note
 

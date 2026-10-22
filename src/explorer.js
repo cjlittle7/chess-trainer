@@ -116,7 +116,7 @@ export function turn(ex) {
   const opts = options(ex);
   if (!opts.length) return "done";
   if (ex.pos.turn === ex.color) return "user";
-  return opts.length === 1 ? "auto" : "choose";
+  return opts.length === 1 && ex.autoplay !== false ? "auto" : "choose";
 }
 
 /** How many lines still continue from here (explore phase) */
@@ -194,6 +194,7 @@ export function createLib(lib, color, minGames = 1) {
 /** Rebuild an explorer at an earlier point by replaying moves (used for Back). */
 export function rebuild(ex, moves) {
   const nx = ex.lib ? createLib(ex.lib, ex.color, ex.minGames) : create(ex.colls, ex.color);
+  nx.autoplay = ex.autoplay;
   for (const u of moves) apply(nx, u);
   return nx;
 }

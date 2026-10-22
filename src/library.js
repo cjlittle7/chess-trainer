@@ -217,15 +217,15 @@ export async function findGames(id, hash, limit = 50) {
     gameCache.set(id, gd);
   }
   if (!gd) return null;
-  const found = [];
+  const found = [], nextOf = new Map();
   const { hashes, starts, info } = gd;
   for (let g = 0; g < info.length; g++) {
-    for (let i = starts[g]; i < starts[g + 1]; i++) if (hashes[i] === hash) { found.push(g); break; }
+    for (let i = starts[g]; i < starts[g + 1]; i++) if (hashes[i] === hash) { found.push(g); nextOf.set(g, i + 1 < starts[g + 1] ? hashes[i + 1] : null); break; }
   }
   found.sort((a, b) => (info[b][5] || "").localeCompare(info[a][5] || "") || b - a);
   const RES = ["1-0", "1/2-1/2", "0-1"];
   return { total: found.length, games: found.slice(0, limit).map((g) => {
     const [white, black, whiteElo, blackElo, ri, date, url, event] = info[g];
-    return { white, black, whiteElo, blackElo, result: RES[ri], date, url, event };
+    return { white, black, whiteElo, blackElo, result: RES[ri], date, url, event, next: nextOf.get(g) };
   }) };
 }

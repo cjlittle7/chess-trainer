@@ -106,3 +106,4 @@ a.magn svg { width:18px; height:18px; }
 .gamerow { display:flex; gap:10px; align-items:center; padding:6px 0; border-top:1px solid var(--border); color:var(--text); font-size:14px; }
 .gamerow .txt { flex:1; min-width:0; } .gamerow .sub { color:var(--muted); font-size:12px; }
 #exGameList { margin-top:8px; max-height:260px; overflow-y:auto; }
+button.nextbtn { background:#4a4540; color:var(--text); width:30px; height:30px; min-height:0; padding:0; border-radius:8px; font-weight:700; flex:none; }

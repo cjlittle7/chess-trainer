@@ -6,7 +6,7 @@ import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
 
-const VERSION = "2.2.0";
+const VERSION = "2.3.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -42,7 +42,7 @@ function loadTheme() {
 }
 
 // ---- arrows whose weight follows the number of games (logarithmic): more games = thicker and more opaque
-const ARROW_STEPS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+const ARROW_STEPS = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
 const arrowBrushes = {};
 for (const [name, color] of [["g", "#15781B"], ["b", "#003088"]]) {
   ARROW_STEPS.forEach((op, i) => { arrowBrushes[`${name}${i}`] = { key: `${name}${i}`, color, opacity: op, lineWidth: 10 }; });
@@ -50,9 +50,10 @@ for (const [name, color] of [["g", "#15781B"], ["b", "#003088"]]) {
 function weightedArrows(opts, colorName) {
   const max = Math.max(...opts.map((o) => o.count), 1);
   return opts.map((o) => {
-    const w = max > 1 ? Math.log(1 + o.count) / Math.log(1 + max) : 1;        // 0..1, relative to the most played move
+    // log scale: a move played 10x less than the top move gets half the weight, 100x less gets the minimum
+    const w = max > 1 ? Math.max(0.05, Math.min(1, 1 + Math.log10(o.count / max) / 2)) : 1;
     const step = Math.min(ARROW_STEPS.length - 1, Math.round(w * (ARROW_STEPS.length - 1)));
-    return { orig: o.from, dest: o.to, brush: `${colorName}${step}`, modifiers: { lineWidth: Math.round(5 + 11 * w) } };
+    return { orig: o.from, dest: o.to, brush: `${colorName}${step}`, modifiers: { lineWidth: Math.round(3 + 15 * w) } };
   }).sort((a, b) => a.modifiers.lineWidth - b.modifiers.lineWidth);           // thin arrows are drawn last so they stay visible
 }
 
@@ -300,6 +301,8 @@ const exMsg = (t, bad = false) => { const m = $("exSetupMsg"); m.textContent = t
 
 let exLibs = [];                                     // game libraries (meta only), for the setup list
 const exSrc = () => document.querySelector('input[name="exSrc"]:checked').value;
+let exAuto = true, exGamesShow = true;                // auto-play the opponent's only move; show the games list automatically
+try { exAuto = localStorage.getItem("exAuto") !== "off"; exGamesShow = localStorage.getItem("exGames") !== "off"; } catch { /* ignore */ }
 let exHints = true;
 try { exHints = localStorage.getItem("exHints") !== "off"; } catch { /* ignore */ }
 
@@ -382,8 +385,9 @@ async function exStart() {
 
 function launchExplorer({ colls, side, ids, ex, lib = null }) {
   const stats = explorer?.stats || { explored: 0, tested: 0, first: 0, wrong: 0, hints: 0 };
-  explorer = { ex, colls, side, ids, lib, busy: true, active: true, missedHere: false, stats };
-  $("exGames").textContent = "Games from here";
+  ex.autoplay = exAuto;
+  explorer = { ex, colls, side, ids, lib, busy: true, active: true, missedHere: false, stats, showGames: exGamesShow };
+  $("exGames").textContent = exGamesShow ? "Hide games" : "Show games";
   hideResult();
   $("exSetup").classList.add("hidden"); $("exRun").classList.remove("hidden"); $("exPanel").classList.remove("hidden");
   $("hintBtn").disabled = false; $("skipBtn").disabled = true;
@@ -435,7 +439,8 @@ function exRender(ready) {
     ? `Only one line is left: ${X.testLineName(ex)}. From here it tests you. ` : "";
   ex.switched = false;
   if (t === "choose") {
-    setStatus(`${note}Your opponent has ${opts.length} replies in ${ex.lib ? "the games" : "your lines"}. Drag one of their pieces, or use the buttons.`);
+    setStatus(opts.length === 1 ? `${note}Play your opponent's move: drag their piece, or press the button.`
+      : `${note}Your opponent has ${opts.length} replies in ${ex.lib ? "the games" : "your lines"}. Drag one of their pieces, or use the buttons.`);
     $("exInfo").textContent = "";
     $("exChoose").classList.remove("hidden");
     $("exChoices").innerHTML = opts.map((o) => rowHtml(o, "button", ` data-uci="${o.uci}"`)).join("");
@@ -471,7 +476,24 @@ const MAGNIFIER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const siteName = (url) => { try { const h = new URL(url).hostname.replace(/^www\./, ""); return h === "lichess.org" ? "Lichess" : h === "chess.com" ? "chess.com" : h; } catch { return "the site"; } };
 const gameTitle = (g) => `${g.white}${g.whiteElo ? ` (${g.whiteElo})` : ""} vs ${g.black}${g.blackElo ? ` (${g.blackElo})` : ""}`;
 const gameSub = (g) => [g.result === "1/2-1/2" ? "½-½" : g.result, g.date, g.event && !/^(rated|casual|live|let's play)/i.test(g.event) ? g.event : ""].filter(Boolean).join(" · ");
+const nextBtn = (g) => `<button class="nextbtn" data-next="${g.next == null ? "" : g.next}" ${g.next == null ? "disabled" : ""} title="${g.next == null ? "This game ends here" : "Play this game's next move"}" aria-label="Play this game's next move">&gt;</button>`;
 const magnLink = (g) => g.url ? `<a class="magn" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer" title="Open this game on ${esc(siteName(g.url))}" aria-label="Open this game on ${esc(siteName(g.url))}">${MAGNIFIER}</a>` : "";
+
+/** Plays the move that a game made next from the current position. */
+function exPlayGameMove(nextHash) {
+  const st = explorer;
+  if (!st?.ex || !st.active || st.busy || st.review != null) return;
+  const ex = st.ex, t = X.turn(ex);
+  if (t !== "user" && t !== "choose") return;
+  let found = null;
+  for (const [from, tos] of E.view(ex.pos).dests) for (const to of tos) for (const uci of E.legalFromTo(ex.pos, from, to)) {
+    const after = ex.pos.clone(); E.play(after, uci);
+    if (L.hashKey(E.key(after)) === nextHash) found = { uci, from, to };
+  }
+  if (!found) return setStatus("Couldn't find that game's next move from here.", "bad");
+  if (!X.options(ex).some((o) => o.uci === found.uci)) return setStatus("That move is hidden by the minimum-games setting.", "bad");
+  if (t === "user") onExplorerMove(found.from, found.to); else exChoose(found.uci);
+}
 
 async function exRefreshGames() {
   const st = explorer;
@@ -494,12 +516,12 @@ async function exRefreshGames() {
   }
   if (wantOne && r.games[0]) {
     const g = r.games[0];
-    $("exOne").innerHTML = `<span class="txt">Only one game reaches this position:<br><strong>${esc(gameTitle(g))}</strong><br><span class="muted">${esc(gameSub(g))}${g.url ? "" : " · no link in the imported file"}</span></span>${magnLink(g)}`;
+    $("exOne").innerHTML = `<span class="txt">Only one game reaches this position:<br><strong>${esc(gameTitle(g))}</strong><br><span class="muted">${esc(gameSub(g))}${g.url ? "" : " · no link in the imported file"}</span></span>${nextBtn(g)}${magnLink(g)}`;
     $("exOne").classList.remove("hidden");
   }
   if (wantList) {
     $("exGameList").innerHTML = `<div class="muted" style="margin-bottom:4px">${r.total.toLocaleString()} game${r.total === 1 ? "" : "s"} reached this position${r.total > r.games.length ? ` (newest ${r.games.length} shown)` : ""}:</div>` +
-      r.games.map((g) => `<div class="gamerow"><span class="txt"><strong>${esc(gameTitle(g))}</strong><br><span class="sub">${esc(gameSub(g))}</span></span>${magnLink(g)}</div>`).join("");
+      r.games.map((g) => `<div class="gamerow"><span class="txt"><strong>${esc(gameTitle(g))}</strong><br><span class="sub">${esc(gameSub(g))}</span></span>${nextBtn(g)}${magnLink(g)}</div>`).join("");
     $("exGameList").classList.remove("hidden");
   } else $("exGameList").classList.add("hidden");
 }
@@ -1280,7 +1302,22 @@ $("exCancel").onclick = closeExplorer;
 $("exClose").onclick = closeExplorer;
 $("exBack").onclick = exBack;
 $("exReturn").onclick = exReturn;
-$("exGames").onclick = () => { if (!explorer) return; explorer.showGames = !explorer.showGames; $("exGames").textContent = explorer.showGames ? "Hide games" : "Games from here"; exRefreshGames(); };
+$("exGames").onclick = () => {
+  if (!explorer) return;
+  explorer.showGames = exGamesShow = !explorer.showGames;
+  try { localStorage.setItem("exGames", exGamesShow ? "on" : "off"); } catch { /* ignore */ }
+  $("exGames").textContent = exGamesShow ? "Hide games" : "Show games"; exRefreshGames();
+};
+$("exAutoChk").checked = exAuto;
+$("exAutoChk").onchange = () => {
+  exAuto = $("exAutoChk").checked;
+  try { localStorage.setItem("exAuto", exAuto ? "on" : "off"); } catch { /* ignore */ }
+  const st = explorer;
+  if (st?.ex) { st.ex.autoplay = exAuto; if (st.active && !st.busy && st.review == null) exContinue(); }
+};
+const exNext = (e) => { const b = e.target.closest("[data-next]"); if (b && !b.disabled) exPlayGameMove(b.dataset.next); };
+$("exGameList").onclick = exNext;
+$("exOne").onclick = exNext;
 $("exCopy").onclick = exCopyPgn;
 $("exNewLine").onclick = exCreateLine;
 $("exMoves").onclick = (e) => { const m = e.target.closest("[data-i]"); if (m) exReview(Number(m.dataset.i)); };
