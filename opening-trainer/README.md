@@ -188,3 +188,34 @@ Players who lose their recovery code can only be helped if you can look it up, s
 3. Accounts created before `CODE_KEY` existed have no stored code until that person next signs in or syncs; for them use **Issue a new code**. If you'd rather not keep codes at all, simply don't set `CODE_KEY`.
 
 Keep both secrets private. Anyone with the admin token and the key can read recovery codes, so only hand a code to the person who owns the account. The app tells new players that the site owner can look up their code to help them.
+
+## Earning animations (v2.10)
+
+- Every EXP and gold gain floats up as a "+N" popup: from the counters under the tabs when you finish a line or puzzle (or from the board if the counters are scrolled out of view), and from the TOMATO button when you throw. The EXP and gold numbers then count up into their new totals and the level bar fills as they do.
+- People who have "reduce motion" switched on in their device settings get no popups and the totals simply update.
+- The gold coin is drawn by the app instead of an emoji, because some phones can't show the coin emoji.
+- Every leaderboard has a **Level** column (worked out from the player's EXP). This needs the updated `tools/tomato-counter-worker.js`; with the old worker the column shows "–".
+
+## Achievements, perfect runs and tab changes (v2.11)
+
+- **Tabs:** STUDY (the trainer), 🍅 (the study break), ACHIEVEMENTS and LEADERBOARD.
+- **Achievements:** 39 collectable badges. 1 / 10 / 100 / 1,000 / 10,000 / 100,000 for perfect lines, perfect puzzles, lifetime EXP, lifetime gold and tomatoes thrown; 10 / 50 / 100 / 1,000 / 10,000 perfect lines or puzzles in a row; 7 / 30 / 100 / 365 days in a row signed in (needs an account). Badges stay unlocked once earned. A toast announces each new one.
+- **Perfect in a row:** the 🎯 chip at the top shows your current run of perfect lines and puzzles. A line or puzzle finished with a wrong move or a hint ends it; your best is kept. "Days in a row" counts days you open the app signed in, and is separate from the daily perfect-solve streak.
+- **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
+- The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
+
+## Chess Tournament Tycoon (v2.12)
+
+The **TYCOON** tab is a tournament hall where chess engines play for you.
+
+- **Engines** form a ladder of 22 rungs, from "Alphabet Al" (always plays the alphabetically first legal move) through random, capture-hungry and shallow-searching engines up to Stockfish 19 at full strength. You start with Random Rodney. Ratings are nominal (the silly engines were rated by tournaments against each other and against Stockfish at low strength). Every engine, however silly, plays a checkmate in one when it sees it.
+- **Tables:** one at the start; more open at levels 10 / 50 / 100 / 200 for 2,120 / 6,120 / 8,480 / 11,230 gold (400 × ln²(level)). Each table shows its game live with an evaluation bar (White at the bottom). Your engine alternates colours every game.
+- **Stages:** each table faces opponents of the stage's rung. After 5 wins the **boss** (the next rung up) appears. Beating it pays gold and player EXP (a quarter on repeats), moves the table up a stage, and is limited per day (15,000 gold and 2,000 EXP, enforced by the online service too). Losing to a boss means 3 more wins before the next try; a draw changes nothing.
+- **Bot EXP:** wins earn bot EXP scaled by the opponent (a draw pays a quarter, a boss win triple). 100 bot EXP = 1 gold. The *Pay with* buttons choose bot EXP first (default), bot EXP only or gold only.
+- **Upgrades:** each table's time between moves starts at 1.2 s and can be bought down to 0.04 s. Engines hold an **opening pack** and two items.
+- **Opening packs:** sample packs of 3 / 5 / 10 / 15 moves unlock at levels 2 / 4 / 10 / 20. At level 50 you can write your own (up to 10 lines per side, 5 packs), or add lines from your own collections.
+- **Items:** Chess Beads (1,000 gold: one rung stronger for 1 hour, then sore for 2 more), Instant Resignation Device (10,000 gold: wins one game outright, not against "titled" opponents it would beat less than 5% of the time), Duck (100 gold: quacks on wins).
+- **Performance:** one shared Stockfish (the 1.9 MB single-threaded "lite" build, 8 MB hash) is started only when a strong engine first needs it, handles one search at a time and shuts down after a minute without work. Games pause when you leave the tab or the page is hidden, unless you tick *Keep playing while I'm on other tabs*.
+- **Saving:** the hall's saved game lives on the device and, for signed-in accounts, is uploaded with the normal sync (newest save wins). Gold spending and boss rewards go through the same sync as everything else, so the service enforces the daily limits. Logging out starts a fresh hall on the device.
+- **Service:** paste the new `worker.js` into Cloudflare and Deploy (new columns are added automatically).
+- **Licence:** `assets/engine/` holds an unmodified Stockfish.js build (Stockfish 19, GPLv3, see `COPYING.txt`; source at https://github.com/nmrugg/stockfish.js). `tools/gen-packs.mjs` regenerates `src/packs.js`.

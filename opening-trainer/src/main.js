@@ -6,8 +6,11 @@ import * as T from "./trainer.js";
 import * as X from "./explorer.js";
 import * as L from "./library.js";
 import * as PR from "./progress.js";
+import * as TY from "./tycoon.js";
+import { createStockfish } from "./sfengine.js";
+import { createHall } from "./hall.js";
 
-const VERSION = "2.9.0";
+const VERSION = "2.12.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -226,11 +229,12 @@ function finishLine() {
   const ln = state.c.lines.find((l) => l.id === state.lineId);
   const lineKey = `${state.c.id}:${state.lineId}`;
   const gain = prog.recordLine({ key: lineKey, name: state.name, moves: s.moves, perfect: !s.wrong && !s.hints, puzzle: !!ln?.start, wrong: s.wrong });
-  renderProgress();
+  gainFx("exp", gain.earned); setTimeout(() => gainFx("gold", gain.gold), 250);
+  renderProgress(); announceAch(gain.unlocked);
   const expRow = (gain.capped
-    ? `<tr><td>EXP</td><td>0 <small class="muted">(this line has used its ${PR.RULES.perLinePerDay} EXP completions today)</small></td></tr>`
-    : `<tr><td>EXP earned</td><td>+${gain.earned} <small class="muted">(${gain.base}${gain.perfect ? ` + ${gain.perfect} perfect` : ""}${gain.long ? ` + ${gain.long} long line` : ""}) · ${gain.leftToday} more today for this line</small></td></tr>`)
-    + (gain.gold ? `<tr><td>Gold</td><td>+${gain.gold} 🪙 <small class="muted">(first time today)</small></td></tr>` : "");
+    ? `<tr><td>EXP</td><td>0</td></tr><tr class="note"><td colspan="2">This line has used its ${PR.RULES.perLinePerDay} EXP completions today.</td></tr>`
+    : `<tr><td>EXP earned</td><td>+${gain.earned}</td></tr><tr class="note"><td colspan="2">${gain.base}${gain.perfect ? ` + ${gain.perfect} perfect` : ""}${gain.long ? ` + ${gain.long} long line` : ""} · ${gain.leftToday} more today for this line</td></tr>`)
+    + (gain.gold ? `<tr><td>Gold</td><td>+${gain.gold} <span class="coin"></span></td></tr><tr class="note"><td colspan="2">First time today</td></tr>` : "");
   const table = `<table class="stats">
       <tr><td>Your moves</td><td>${s.moves}</td></tr>
       <tr><td>Correct on first try</td><td>${s.first}</td></tr>
@@ -1338,7 +1342,7 @@ async function tomatoRequest(path, init) {
 const syncMs = () => Number((window.APP_CONFIG || {}).tomatoSyncMs) || 600000;
 async function tomatoFlush() {
   if (!counterUrl() || tomato.flushing) return;
-  if (prog.account) { if (prog.hasQueue() || !tomato.loaded) await accountSync(); return; }
+  if (prog.account) { if (prog.hasQueue() || !tomato.loaded || tycDirty()) await accountSync(); return; }
   if (!tomato.pending && tomato.server != null && tomato.loaded) return;       // nothing to send, nothing to fetch
   tomato.flushing = true;
   try {
@@ -1356,11 +1360,14 @@ async function tomatoFlush() {
 function tomatoBeacon() {                                // the page is being hidden or closed: send what is left without waiting for an answer
   if (!counterUrl()) return;
   if (prog.account) {
-    if (!prog.hasQueue() || acctBusy || Date.now() - prog.state.syncedAt < 16000) return;   // too soon after the last upload: keep it queued for next time
-    const taken = prog.takeQueue();
+    if ((!prog.hasQueue() && !tycDirty()) || acctBusy || Date.now() - prog.state.syncedAt < 16000) return;   // too soon after the last upload: keep it queued for next time
+    const taken = prog.takeQueue(), tyc = tycPayload();
     try {
-      const body = JSON.stringify({ code: prog.account.code, events: { lines: taken.lines, tomato: taken.tomato, flagged: taken.flagged } });
-      if (navigator.sendBeacon(counterUrl() + "/sync", new Blob([body], { type: "text/plain" }))) prog.ackQueue(taken);
+      const events = { lines: taken.lines, tomato: taken.tomato, flagged: taken.flagged };
+      if (taken.spend) events.spend = taken.spend;
+      if (taken.tg || taken.te) events.tycoon = { gold: taken.tg, exp: taken.te };
+      const body = JSON.stringify({ code: prog.account.code, events, tyc, tycTs: tycSynced() });
+      if (navigator.sendBeacon(counterUrl() + "/sync", new Blob([body], { type: "text/plain" }))) { prog.ackQueue(taken); if (tyc) setTycSynced(tyc.ts); }
     } catch { /* ignore */ }
     return;
   }
@@ -1374,13 +1381,44 @@ function tomatoBeacon() {                                // the page is being hi
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") tomatoBeacon(); });
 window.addEventListener("pagehide", tomatoBeacon);
-setInterval(() => { if (tomato.pending || prog.hasQueue()) tomatoFlush(); }, syncMs());
+setInterval(() => { if (tomato.pending || prog.hasQueue() || tycDirty()) tomatoFlush(); }, syncMs());
 
 const prog = PR.createProgress({
   load: () => { try { return JSON.parse(localStorage.getItem("profile")); } catch { return null; } },
   save: (o) => { try { localStorage.setItem("profile", JSON.stringify(o)); } catch { /* ignore */ } },
   today: () => new Date().toLocaleDateString("en-CA"),
 });
+// ---- Chess Tournament Tycoon: its saved game lives on this device (and in your account, if you have one); gold and boss rewards go through the progress code
+const tycoon = TY.createTycoon({
+  load: () => { try { return JSON.parse(localStorage.getItem("tycoon")); } catch { return null; } },
+  save: (o) => { try { localStorage.setItem("tycoon", JSON.stringify(o)); } catch { /* ignore */ } },
+  wallet: {
+    gold: () => prog.state.gold,
+    level: () => PR.levelInfo(prog.state.exp).level,
+    spend: (n) => { prog.spend(n); },
+    grant: ({ gold, exp }) => { const g = prog.grantTycoon({ gold, exp }); announceAch(g.unlocked); return { gold: g.gold, exp: g.exp }; },
+  },
+});
+const tycSynced = () => { try { return Number(localStorage.getItem("tycSynced")) || 0; } catch { return 0; } };
+const setTycSynced = (ts) => { try { localStorage.setItem("tycSynced", String(ts)); } catch { /* ignore */ } };
+const tycDirty = () => !!prog.account && tycoon.state.ts > tycSynced();
+const tycPayload = () => (tycDirty() ? { ts: tycoon.state.ts, data: JSON.stringify(tycoon.state) } : undefined);
+let hall = null, stockfish = null, hallPaintTimer = 0;
+if (location.hash === "#debug") { window.__tycoon = tycoon; window.__prog = prog; }          // lets automated tests look inside
+function ensureHall() {
+  if (hall) return hall;
+  stockfish = createStockfish();
+  hall = createHall({
+    root: $("hallView"), T: tycoon, sf: stockfish,
+    notify: (t, kind) => toast(t, kind || ""), fx: (kind, n, el) => gainFx(kind, n, el),
+    changed: () => { if (!hallPaintTimer) hallPaintTimer = setTimeout(() => { hallPaintTimer = 0; renderProgress(); }, 1200); },
+    collections: () => S.collections().map((c) => ({ id: c.id, name: c.name, color: sideOf(c), lines: c.lines.map((l) => ({ moves: l.moves, start: l.start })) })),
+    tycoonLeft: () => prog.tycoonLeft(),
+  });
+  $("hallView").addEventListener("hall-exit", () => showTab("train"));
+  return hall;
+}
+
 const toastQ = []; let toastBusy = false;
 function toast(text, kind = "") { toastQ.push([text, kind]); if (!toastBusy) nextToast(); }
 function nextToast() {
@@ -1409,14 +1447,20 @@ async function accountSync({ ranks = false } = {}) {
   acctBusy = true;
   const taken = prog.takeQueue();
   const events = taken.lines.length || taken.tomato.n || taken.flagged ? { lines: taken.lines, tomato: taken.tomato, flagged: taken.flagged } : {};
+  if (taken.spend) events.spend = taken.spend;
+  if (taken.tg || taken.te) events.tycoon = { gold: taken.tg, exp: taken.te };
+  const tyc = tycPayload();
   try {
-    const j = await api("/sync", { code: acct.code, events, ranks });
-    prog.ackQueue(taken); prog.applyServer(j, todayStr());
+    const j = await api("/sync", { code: acct.code, events, ranks, tyc, tycTs: tycSynced() });
+    prog.ackQueue(taken); announceAch(prog.applyServer(j, todayStr())); announceAch(j.newAch);
+    if (tyc) setTycSynced(tyc.ts);
+    if (j.tyc) { try { if (tycoon.adopt(JSON.parse(j.tyc.data))) { setTycSynced(j.tyc.ts); if (hall) hall.reload(); } } catch { /* a damaged copy is ignored */ } }
     tomato.server = j.global; tomato.loaded = true; lsSet("tomatoServer", j.global);
     if (j.warn) { prog.lock(); refreshTomatoLock("more throws than a person can press"); }
     if (j.streakAwards && j.streakAwards.length) {
       const sum = (k) => j.streakAwards.reduce((x, r) => x + r[k], 0), last = j.streakAwards[j.streakAwards.length - 1];
       toast(`🔥 Day ${last.n} streak! +${sum("exp").toLocaleString()} EXP, +${sum("gold").toLocaleString()} gold`, "achievement");
+      gainFx("exp", sum("exp")); setTimeout(() => gainFx("gold", sum("gold")), 250);
     }
     if (acctMsg && !acctBad) acctMsg = "";
     return j;
@@ -1462,7 +1506,7 @@ function renderAccount() {
     try {
       const nick = $("nickInput").value.trim(); prog.setNick(nick);
       const j = await api("/register", { nick, tz: tzMinutes(), import: prog.importPayload() });
-      prog.setAccount(j.code, j, todayStr()); shownLevel = null; newCode = j.code; showCode = false; nickDraft = null;
+      setTycSynced(0); prog.setAccount(j.code, j, todayStr()); shownLevel = null; snapStats(); newCode = j.code; showCode = false; nickDraft = null;
       tomato.server = j.global; tomato.loaded = true; sendLeftoverHits();
       acctMsg = "Account created. Welcome, " + j.nick + "!"; acctBad = false;
     } catch (e) { acctMsg = e.message === "Failed to fetch" ? "Couldn't reach the online service. Check your connection." : e.message; acctBad = true; }
@@ -1472,7 +1516,9 @@ function renderAccount() {
     try {
       const code = $("codeInput").value.trim();
       const j = await api("/login", { code, tz: tzMinutes() });
-      prog.setAccount(code, j, todayStr(), j.perLine); shownLevel = null; newCode = ""; showCode = false; codeDraft = ""; loginOpen = false;
+      prog.setAccount(code, j, todayStr(), j.perLine); shownLevel = null; snapStats(); newCode = ""; showCode = false; codeDraft = ""; loginOpen = false;
+      if (j.tyc) { try { tycoon.adopt(JSON.parse(j.tyc.data), true); setTycSynced(j.tyc.ts); } catch { setTycSynced(0); } } else setTycSynced(0);
+      if (hall) hall.reload();
       tomato.server = j.global; tomato.loaded = true; sendLeftoverHits();
       acctMsg = "Logged in as " + j.nick + "."; acctBad = false;
     } catch (e) { acctMsg = e.message === "Failed to fetch" ? "Couldn't reach the online service. Check your connection." : e.message; acctBad = true; }
@@ -1480,23 +1526,69 @@ function renderAccount() {
   });
   on("syncBtn", async () => { await accountSync(); if (!acctMsg) say("Synced."); });
   on("codeBtn", () => { showCode = !showCode; renderAccount(); });
-  on("outBtn", async () => { await accountSync(); prog.signOut(); shownLevel = null; tomato.loaded = false; showCode = false; newCode = ""; say("Logged out. This device is back to a blank profile."); renderProgress(); renderTomatoCount(); });
+  on("outBtn", async () => { await accountSync(); prog.signOut(); tycoon.reset(); setTycSynced(0); if (hall) hall.reload(); shownLevel = null; snapStats(); tomato.loaded = false; showCode = false; newCode = ""; say("Logged out. This device is back to a blank profile."); renderProgress(); renderTomatoCount(); });
   on("copyCodeBtn", async () => { try { await navigator.clipboard.writeText(newCode); say("Copied."); } catch { say("Couldn't copy automatically. Select the code and copy it.", true); } });
   on("savedBtn", () => { newCode = ""; acctMsg = ""; renderAccount(); });
+}
+
+// ---- earning animations: "+N" popups, and the EXP / gold numbers counting up into the totals
+const reduceMotion = () => { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+const inView = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= window.innerHeight; };
+function gainFx(kind, amount, from) {
+  if (!amount || amount <= 0 || reduceMotion()) return;
+  const fx = $("fx"); if (fx.children.length > 14) return;
+  const chip = $(kind === "exp" ? "expChip" : "goldChip");
+  const origin = from && inView(from) ? from : inView(chip) ? chip : $("board");     // rise from where you can see it
+  const r = origin.getBoundingClientRect();
+  const x = r.width ? r.left + r.width / 2 : window.innerWidth / 2, y = r.width ? r.top + (origin === chip ? 0 : Math.min(30, r.height / 2)) : 90;
+  const el = document.createElement("span");
+  el.className = `gain ${kind}`;
+  el.innerHTML = kind === "gold" ? `+${amount.toLocaleString()} <span class="coin"></span>` : `+${amount.toLocaleString()} EXP`;
+  el.style.left = Math.round(x + (Math.random() - 0.5) * 36) + "px"; el.style.top = Math.round(y) + "px";
+  fx.append(el);
+  const done = () => el.remove(); el.addEventListener("animationend", done); setTimeout(done, 2500);
+}
+const bump = (el) => { if (reduceMotion()) return; el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); };
+const disp = { exp: null, gold: 0, tExp: null, tGold: null, raf: 0 };               // what the chips currently show
+function paintStats() {
+  const e = Math.round(disp.exp), g = Math.round(disp.gold), lv = PR.levelInfo(e);
+  $("expChip").textContent = `⭐ ${e.toLocaleString()} EXP`;
+  $("goldChip").innerHTML = `<span class="coin"></span> ${g.toLocaleString()}`;
+  $("lvlChip").textContent = `Lv ${lv.level}`;
+  $("lvlFill").style.width = Math.round(lv.pct * 100) + "%";
+  $("lvlBar").title = `${lv.into.toLocaleString()} / ${lv.need.toLocaleString()} EXP to level ${lv.level + 1}`;
+  $("lvlText").textContent = `${lv.into.toLocaleString()} / ${lv.need.toLocaleString()}`;
+}
+const snapStats = () => { cancelAnimationFrame(disp.raf); disp.exp = null; disp.tExp = null; disp.tGold = null; };   // next paint jumps straight to the new totals (login, logout)
+function tweenStats(exp, gold) {
+  if (disp.exp === null || reduceMotion()) { cancelAnimationFrame(disp.raf); disp.exp = disp.tExp = exp; disp.gold = disp.tGold = gold; paintStats(); return; }
+  if (exp === disp.tExp && gold === disp.tGold) return;
+  if (exp !== disp.tExp) bump($("expChip")); if (gold !== disp.tGold) bump($("goldChip"));
+  const f = { exp: disp.exp, gold: disp.gold }, t0 = performance.now();
+  disp.tExp = exp; disp.tGold = gold;
+  const dur = Math.min(1600, 500 + 140 * Math.log2(1 + Math.max(Math.abs(exp - f.exp), Math.abs(gold - f.gold))));
+  cancelAnimationFrame(disp.raf);
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);          // ease-out: fast at first, settling into the total
+    disp.exp = f.exp + (exp - f.exp) * e; disp.gold = f.gold + (gold - f.gold) * e;
+    if (k >= 1) { disp.exp = exp; disp.gold = gold; }
+    paintStats();
+    if (k < 1) disp.raf = requestAnimationFrame(step);
+  };
+  disp.raf = requestAnimationFrame(step);
 }
 
 let shownLevel = null;                                     // the level last shown, so a level-up can be announced
 function renderProgress() {
   const st = prog.state, life = st.life, avg = prog.avgPerfectLength();
   const lv = PR.levelInfo(st.exp);
-  $("expChip").textContent = `⭐ ${st.exp.toLocaleString()} EXP`;
-  $("goldChip").textContent = `🪙 ${st.gold.toLocaleString()}`;
-  $("lvlChip").textContent = `Lv ${lv.level}`;
-  $("lvlFill").style.width = Math.round(lv.pct * 100) + "%";
-  $("lvlBar").title = `${lv.into.toLocaleString()} / ${lv.need.toLocaleString()} EXP to level ${lv.level + 1}`;
-  $("lvlText").textContent = `${lv.into.toLocaleString()} / ${lv.need.toLocaleString()}`;
+  tweenStats(st.exp, st.gold);
   if (shownLevel !== null && lv.level > shownLevel) toast(`Level up! You reached level ${lv.level}`, "achievement");
   shownLevel = lv.level;
+  const rc = $("runChip"), run = st.run || { cur: 0, best: 0 };
+  rc.textContent = `🎯 ${run.cur} in a row`; rc.classList.toggle("zero", !run.cur);
+  rc.title = `Perfect lines and puzzles in a row (best: ${run.best}). A wrong move or a hint resets it.`;
+  if ($("achView") && !$("achView").classList.contains("hidden")) renderAch();
   const sk = st.streak || { n: 0, today: false }, sc = $("streakChip");
   sc.classList.toggle("hidden", !prog.account);
   sc.classList.toggle("pending", !sk.today);
@@ -1509,7 +1601,7 @@ function renderProgress() {
       <tr><td>Level</td><td>${lv.level}</td></tr>
       <tr><td colspan="2"><div class="lvbar bigbar"><i style="width:${Math.round(lv.pct * 100)}%"></i></div><small class="muted">${lv.into.toLocaleString()} / ${lv.need.toLocaleString()} EXP to level ${lv.level + 1}</small></td></tr>
       <tr><td>Training EXP</td><td>${st.exp.toLocaleString()}</td></tr>
-      <tr><td>Gold</td><td>${st.gold.toLocaleString()} 🪙</td></tr>
+      <tr><td>Gold</td><td>${st.gold.toLocaleString()} <span class="coin"></span></td></tr>
       ${prog.account ? `<tr><td>Daily streak</td><td>${sk.n} day${sk.n === 1 ? "" : "s"} ${sk.today ? "✓" : ""}</td></tr>
       <tr><td colspan="2"><small class="muted">${sk.today ? `Today's perfect line is done. Tomorrow pays ${PR.streakReward(sk.n + 1).exp.toLocaleString()} EXP and ${PR.streakReward(sk.n + 1).gold.toLocaleString()} gold.`
         : `Solve one line or puzzle perfectly today for ${PR.streakReward(sk.n + 1).exp.toLocaleString()} EXP and ${PR.streakReward(sk.n + 1).gold.toLocaleString()} gold${sk.n ? " and to keep the streak" : ""}.`}</small></td></tr>` : ""}
@@ -1566,8 +1658,10 @@ function throwTomato(ev) {
   setTimeout(() => { if (img.isConnected) img.src = TOMATO_LAST; }, TOMATO_MS);   // the last frame stays until you exit
   tomato.device++; lsSet("tomatoDevice", tomato.device);
   tomato.pending += counterUrl() && !prog.account ? 1 : 0; lsSet("tomatoPending", tomato.pending);
+  gainFx("exp", r.exp, $("tomatoBtn")); if (r.gold > 0) setTimeout(() => gainFx("gold", r.gold, $("tomatoBtn")), 180);
   renderTomatoCount(); renderProgress();
   if (r.achievement) toast("Procedure Performed!", "achievement");
+  if (r.unlocked) announceAch(r.unlocked);
 }
 
 // ------------------------------------------------------------- leaderboard
@@ -1593,9 +1687,9 @@ function renderBoard() {
   const rows = board.data ? board.data[which] || [] : [];
   const mine = (prog.state.nick || "").toLowerCase();
   $("boardTitle").textContent = title;
-  $("boardTable").innerHTML = `<tr><th>#</th><th>Player</th><th>${esc(head)}</th></tr>` +
-    (rows.length ? rows.map((r) => `<tr class="${prog.account && r.nick.toLowerCase() === mine ? "me" : ""}"><td>${r.rank}</td><td>${esc(r.nick)}</td><td>${fmt(r.value)}</td></tr>`).join("")
-                 : `<tr><td colspan="3" class="muted">${board.data ? "Nobody here yet. Be the first!" : "…"}</td></tr>`);
+  $("boardTable").innerHTML = `<tr><th>#</th><th>Player</th><th>${esc(head)}</th><th>Level</th></tr>` +
+    (rows.length ? rows.map((r) => `<tr class="${prog.account && r.nick.toLowerCase() === mine ? "me" : ""}"><td>${r.rank}</td><td>${esc(r.nick)}</td><td>${fmt(r.value)}</td><td>${r.exp != null ? PR.levelInfo(r.exp).level : "–"}</td></tr>`).join("")
+                 : `<tr><td colspan="4" class="muted">${board.data ? "Nobody here yet. Be the first!" : "…"}</td></tr>`);
   const me = $("boardMe");
   if (!prog.account) { me.textContent = counterUrl() ? "Create an account in “Your progress” to join the leaderboard." : ""; return; }
   const st = prog.state, rk = board.ranks && board.ranks[which];
@@ -1605,15 +1699,40 @@ function renderBoard() {
 }
 $("boardTabs").onclick = (e) => { const b = e.target.closest("button[data-b]"); if (b) { board.which = b.dataset.b; renderBoard(); } };
 
-const VIEWS = { train: ["trainerView", "tabTrain"], study: ["studyView", "tabStudy"], board: ["boardView", "tabBoard"] };
+const achSeen = new Set();
+function announceAch(ids) {
+  if (!ids || !ids.length) return;
+  const defs = prog.achievements();
+  for (const id of ids) {
+    if (achSeen.has(id)) continue; achSeen.add(id);
+    const [cat, n] = id.split(":"), d = defs.find((x) => x.id === cat);
+    if (d) toast(`🏆 Achievement unlocked: ${d.name} ${Number(n).toLocaleString()}`, "achievement");
+  }
+}
+function renderAch() {
+  const defs = prog.achievements(), fmt = (n) => Number(n).toLocaleString();
+  const total = defs.reduce((x, d) => x + d.tiers.length, 0), got = defs.reduce((x, d) => x + d.tiersInfo.filter((t) => t.at).length, 0);
+  $("achSummary").textContent = `${got} of ${total} unlocked`;
+  $("achList").innerHTML = defs.map((d) => {
+    const next = d.tiersInfo.find((t) => !t.at), prev = d.tiersInfo.filter((t) => t.at).pop();
+    const pct = next ? Math.min(100, Math.round(100 * (d.value - (prev ? prev.n : 0)) / (next.n - (prev ? prev.n : 0)))) : 100;
+    return `<div class="achcat" data-cat="${d.id}"><h2>${d.icon === "◎" ? '<span class="coin"></span>' : esc(d.icon)} ${esc(d.name)}</h2>
+      <div class="now">${d.needsAccount && !prog.account ? "Needs an account (create one in “Your progress”). " : ""}Now: ${fmt(d.value)}${next ? ` · next at ${fmt(next.n)}` : " · all unlocked"}</div>
+      <div class="achtiers">${d.tiersInfo.map((t, i) => `<div class="ach t${i}${t.at ? " got" : ""}" data-id="${t.id}"><b>${fmt(t.n)}</b><small>${t.at ? new Date(t.at).toLocaleDateString() : "locked"}</small></div>`).join("")}</div>
+      <div class="achbar"><i style="width:${pct}%"></i></div></div>`;
+  }).join("");
+}
+const VIEWS = { train: ["trainerView", "tabTrain"], study: ["studyView", "tabStudy"], ach: ["achView", "tabAch"], hall: ["hallView", "tabHall"], board: ["boardView", "tabBoard"] };
 function showTab(which) {
   for (const [k, [view, tab]] of Object.entries(VIEWS)) {
     $(view).classList.toggle("hidden", k !== which);
     $(tab).classList.toggle("active", k === which); $(tab).setAttribute("aria-pressed", String(k === which));
   }
+  if (which === "hall") { ensureHall().setVisible(true); window.scrollTo(0, 0); } else if (hall) hall.setVisible(false);
   if (which !== "study") $("studyOverlay").innerHTML = "";                       // leaving the study break clears the tomatoes
   if (which === "study") { refreshTomatoLock(); renderTomatoExp(); renderTomatoCount(); if (!tomato.loaded && !prog.hasQueue() && !tomato.pending) tomatoFlush(); window.scrollTo(0, 0); }
   else if (which === "board") { loadBoard(); window.scrollTo(0, 0); }
+  else if (which === "ach") { renderAch(); window.scrollTo(0, 0); }
   else ground?.redrawAll?.();
 }
 
@@ -1670,6 +1789,10 @@ $("tabStudy").onclick = () => showTab("study");
 $("studyExit").onclick = () => showTab("train");
 $("tomatoBtn").onclick = throwTomato;
 $("tabBoard").onclick = () => showTab("board");
+$("tabAch").onclick = () => showTab("ach");
+$("tabHall").onclick = () => showTab("hall");
+if (tycoon.state.bg) setTimeout(() => { ensureHall(); hall.setVisible(false); }, 3000);          // "keep playing on other tabs" was on: start the tables again
+$("achExit").onclick = () => showTab("train");
 $("boardExit").onclick = () => showTab("train");
 renderAccount(); renderProgress();
 setTimeout(() => { if (prog.account && prog.hasQueue()) accountSync(); }, 4000);          // send anything left over from the last visit

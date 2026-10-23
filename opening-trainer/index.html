@@ -15,8 +15,10 @@
 </head>
 <body>
 <nav class="tabs" id="tabs">
-  <button id="tabTrain" class="tab active" aria-pressed="true">Trainer</button>
-  <button id="tabStudy" class="tab" aria-pressed="false">STUDY BREAK</button>
+  <button id="tabTrain" class="tab active" aria-pressed="true">STUDY</button>
+  <button id="tabStudy" class="tab tomato-tab" aria-pressed="false" aria-label="Study break" title="Study break">🍅</button>
+  <button id="tabAch" class="tab" aria-pressed="false">ACHIEVEMENTS</button>
+  <button id="tabHall" class="tab" aria-pressed="false">TYCOON</button>
   <button id="tabBoard" class="tab" aria-pressed="false">LEADERBOARD</button>
 </nav>
 <div class="statbar" id="statBar">
@@ -26,6 +28,7 @@
   <span id="expChip" title="Training EXP"></span>
   <span id="goldChip" title="Gold"></span>
   <span id="streakChip" class="hidden"></span>
+  <span id="runChip" title=""></span>
 </div>
 <div class="layout" id="trainerView">
   <div class="board-col"><div id="board" class="cg-wrap"></div></div>
@@ -325,6 +328,14 @@
   <small id="boardNote" class="muted"></small>
   <div><button id="boardExit" class="secondary" style="margin-top:14px">Back to trainer</button></div>
 </div>
+<div id="hallView" class="hall hidden"></div>
+<div id="achView" class="study hidden">
+  <h1>Achievements</h1>
+  <div id="achSummary" class="boardme"></div>
+  <div id="achList"></div>
+  <div><button id="achExit" class="secondary" style="margin-top:14px">Back to study</button></div>
+</div>
+<div id="fx" aria-hidden="true"></div>
 <div id="toast" class="toast hidden" role="status"></div>
 <noscript>This app needs JavaScript.</noscript>
 <script src="config.js"></script>

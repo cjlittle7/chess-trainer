@@ -1,8 +1,9 @@
 // Offline support. Files are served from the cache first and refreshed in the background,
 // so an update shows up the second time you open the app. Bump CACHE if you add or rename files.
-const CACHE = "opening-trainer-v23";
+const CACHE = "opening-trainer-v26";
 const FILES = ["./", "./index.html", "./style.css", "./app.js", "./manifest.webmanifest",
                "./config.js", "./assets/study/photo.jpg", "./assets/study/tomato.gif", "./assets/study/tomato-last.png",
+               "./assets/engine/stockfish-19-lite-single.js", "./assets/engine/stockfish-19-lite-single.wasm",
                "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
