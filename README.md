@@ -177,7 +177,7 @@ With the online service switched on, the Progress panel offers **Create account*
 
 - **Gold:** +10 the first time you complete each line or puzzle each day, and 1 for every 5 tomatoes thrown (up to 20 a day). For now it is a counter; nothing spends it yet.
 - **Levels:** you start at level 1. Going from level n to n+1 takes 100 + (100 × (n − 1))^(1.001^n) EXP, rounded down to a multiple of 10 (100 for level 1, 200 for level 2, 300 for level 3, 510 for level 5, 1,060 for level 10). The bar under the tabs shows your progress; a level-up pops up.
-- **Daily streak (needs an account):** the first line or puzzle you solve *perfectly* (no wrong moves, no hints) each day extends your streak. Day n pays **50 + 10 × n EXP** (at most 1,000) and **10 + 5 × n gold** (at most 500). Miss a whole day and it starts again at 1. The 🔥 counter next to your level shows the streak; it is dimmed until you've done today's perfect line. The server awards the bonus when your device next syncs.
+- **Daily streak (needs an account):** the first line or puzzle of 5 or more moves you finish each day (perfect or not) extends your streak. Day n pays **50 + 10 × n EXP** (at most 1,000) and **10 + 5 × n gold** (at most 500). Miss a whole day and it starts again at 1. The 🔥 counter next to your level shows the streak; it is dimmed until you've done today's line. The app syncs a moment after that first line, and when you open it, so the bonus and new achievements show up right away.
 
 ## Owner tools: finding a lost recovery code
 
@@ -204,7 +204,12 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
-## Chess Tournament Tycoon (v2.12)
+## v2.13 changes
+
+- **Streaks and toasts:** any completed line of 5+ moves (perfect or not) counts for the daily streak, and the news arrives quickly (a sync shortly after the first qualifying line, at start-up and when you return to the app). Achievement toasts appear bottom right. **Redeploy `worker.js`** for the streak rule.
+- **Tycoon:** your bots now have their own roster (a few Stockfish strengths are shared with the opponents). New characters: *Grobulus Borgman* (20,000 gold; 1.g4 / 1...g5 every game, then Stockfish), *Bongcloud Barry* (1,000; king moves in his first two moves) and *Gender Nonconformist* (800; swaps king and queen). Every purchase has a gold button and a bot EXP button. Engines can be renamed (letters, digits, spaces, 20 max). Speed upgrades move 0.05 s at 10x the price. The board turns to your bot's side and the eval bar shows its chances. Bot EXP shows beside gold; "keep playing on other tabs" is on by default; the next table is a slim row.
+
+## Chess Tournament Tycoon (v2.12, see above for v2.13 changes)
 
 The **TYCOON** tab is a tournament hall where chess engines play for you.
 
