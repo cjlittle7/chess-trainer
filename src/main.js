@@ -7,7 +7,7 @@ import * as X from "./explorer.js";
 import * as L from "./library.js";
 import * as PR from "./progress.js";
 
-const VERSION = "2.8.0";
+const VERSION = "2.10.0";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const RESULT_TEXT = { "1-0": "White won", "0-1": "Black won", "1/2-1/2": "Draw" };
@@ -226,10 +226,12 @@ function finishLine() {
   const ln = state.c.lines.find((l) => l.id === state.lineId);
   const lineKey = `${state.c.id}:${state.lineId}`;
   const gain = prog.recordLine({ key: lineKey, name: state.name, moves: s.moves, perfect: !s.wrong && !s.hints, puzzle: !!ln?.start, wrong: s.wrong });
+  gainFx("exp", gain.earned); setTimeout(() => gainFx("gold", gain.gold), 250);
   renderProgress();
-  const expRow = gain.capped
-    ? `<tr><td>EXP</td><td>0 <small class="muted">(daily limit of ${PR.RULES.linesPerDay} lines reached)</small></td></tr>`
-    : `<tr><td>EXP earned</td><td>+${gain.earned} <small class="muted">(${gain.base}${gain.perfect ? ` + ${gain.perfect} perfect` : ""}${gain.long ? ` + ${gain.long} long line` : ""}) · ${gain.linesLeft} left today</small></td></tr>`;
+  const expRow = (gain.capped
+    ? `<tr><td>EXP</td><td>0 <small class="muted">(this line has used its ${PR.RULES.perLinePerDay} EXP completions today)</small></td></tr>`
+    : `<tr><td>EXP earned</td><td>+${gain.earned} <small class="muted">(${gain.base}${gain.perfect ? ` + ${gain.perfect} perfect` : ""}${gain.long ? ` + ${gain.long} long line` : ""}) · ${gain.leftToday} more today for this line</small></td></tr>`)
+    + (gain.gold ? `<tr><td>Gold</td><td>+${gain.gold} <span class="coin"></span> <small class="muted">(first time today)</small></td></tr>` : "");
   const table = `<table class="stats">
       <tr><td>Your moves</td><td>${s.moves}</td></tr>
       <tr><td>Correct on first try</td><td>${s.first}</td></tr>
@@ -1380,10 +1382,13 @@ const prog = PR.createProgress({
   save: (o) => { try { localStorage.setItem("profile", JSON.stringify(o)); } catch { /* ignore */ } },
   today: () => new Date().toLocaleDateString("en-CA"),
 });
-let toastTimer;
-function toast(text, kind = "") {
-  const t = $("toast"); t.textContent = text; t.className = "toast " + kind;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add("hidden"), kind === "achievement" ? 4500 : 2500);
+const toastQ = []; let toastBusy = false;
+function toast(text, kind = "") { toastQ.push([text, kind]); if (!toastBusy) nextToast(); }
+function nextToast() {
+  const n = toastQ.shift(), t = $("toast");
+  if (!n) { toastBusy = false; return; }
+  toastBusy = true; t.textContent = n[0]; t.className = "toast " + n[1];
+  setTimeout(() => { t.classList.add("hidden"); setTimeout(nextToast, 250); }, n[1] === "achievement" ? 4500 : 2500);
 }
 
 let acctMsg = "", acctBad = false, newCode = "", showCode = false, acctBusy = false;
@@ -1410,6 +1415,11 @@ async function accountSync({ ranks = false } = {}) {
     prog.ackQueue(taken); prog.applyServer(j, todayStr());
     tomato.server = j.global; tomato.loaded = true; lsSet("tomatoServer", j.global);
     if (j.warn) { prog.lock(); refreshTomatoLock("more throws than a person can press"); }
+    if (j.streakAwards && j.streakAwards.length) {
+      const sum = (k) => j.streakAwards.reduce((x, r) => x + r[k], 0), last = j.streakAwards[j.streakAwards.length - 1];
+      toast(`🔥 Day ${last.n} streak! +${sum("exp").toLocaleString()} EXP, +${sum("gold").toLocaleString()} gold`, "achievement");
+      gainFx("exp", sum("exp")); setTimeout(() => gainFx("gold", sum("gold")), 250);
+    }
     if (acctMsg && !acctBad) acctMsg = "";
     return j;
   } catch (e) {
@@ -1438,7 +1448,7 @@ function renderAccount() {
   } else {
     html += `<input type="text" id="nickInput" placeholder="Choose a nickname (3–20 characters)" maxlength="20" value="${esc(nickDraft ?? st.nick)}" autocomplete="off">
       <div class="row"><button id="regBtn">Create account</button></div>
-      <small class="muted">Keeps your EXP and stats, works on any device, and puts you on the leaderboard (nicknames are public). You get a recovery code instead of a password.</small>
+      <small class="muted">Keeps your EXP and stats, works on any device, and puts you on the leaderboard (nicknames are public). You get a recovery code instead of a password. If you ever lose it, the site owner can look it up to help you get back in.</small>
       <details id="loginBox" style="margin-top:8px"${loginOpen ? " open" : ""}><summary>I already have a recovery code</summary>
         <input type="text" id="codeInput" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" autocapitalize="characters" autocomplete="off" value="${esc(codeDraft)}" style="margin-top:8px">
         <button id="loginBtn" class="secondary">Log in</button>
@@ -1454,7 +1464,7 @@ function renderAccount() {
     try {
       const nick = $("nickInput").value.trim(); prog.setNick(nick);
       const j = await api("/register", { nick, tz: tzMinutes(), import: prog.importPayload() });
-      prog.setAccount(j.code, j, todayStr()); newCode = j.code; showCode = false; nickDraft = null;
+      prog.setAccount(j.code, j, todayStr()); shownLevel = null; snapStats(); newCode = j.code; showCode = false; nickDraft = null;
       tomato.server = j.global; tomato.loaded = true; sendLeftoverHits();
       acctMsg = "Account created. Welcome, " + j.nick + "!"; acctBad = false;
     } catch (e) { acctMsg = e.message === "Failed to fetch" ? "Couldn't reach the online service. Check your connection." : e.message; acctBad = true; }
@@ -1464,7 +1474,7 @@ function renderAccount() {
     try {
       const code = $("codeInput").value.trim();
       const j = await api("/login", { code, tz: tzMinutes() });
-      prog.setAccount(code, j, todayStr(), j.perLine); newCode = ""; showCode = false; codeDraft = ""; loginOpen = false;
+      prog.setAccount(code, j, todayStr(), j.perLine); shownLevel = null; snapStats(); newCode = ""; showCode = false; codeDraft = ""; loginOpen = false;
       tomato.server = j.global; tomato.loaded = true; sendLeftoverHits();
       acctMsg = "Logged in as " + j.nick + "."; acctBad = false;
     } catch (e) { acctMsg = e.message === "Failed to fetch" ? "Couldn't reach the online service. Check your connection." : e.message; acctBad = true; }
@@ -1472,21 +1482,83 @@ function renderAccount() {
   });
   on("syncBtn", async () => { await accountSync(); if (!acctMsg) say("Synced."); });
   on("codeBtn", () => { showCode = !showCode; renderAccount(); });
-  on("outBtn", async () => { await accountSync(); prog.signOut(); tomato.loaded = false; showCode = false; newCode = ""; say("Logged out. This device is back to a blank profile."); renderProgress(); renderTomatoCount(); });
+  on("outBtn", async () => { await accountSync(); prog.signOut(); shownLevel = null; snapStats(); tomato.loaded = false; showCode = false; newCode = ""; say("Logged out. This device is back to a blank profile."); renderProgress(); renderTomatoCount(); });
   on("copyCodeBtn", async () => { try { await navigator.clipboard.writeText(newCode); say("Copied."); } catch { say("Couldn't copy automatically. Select the code and copy it.", true); } });
   on("savedBtn", () => { newCode = ""; acctMsg = ""; renderAccount(); });
 }
 
+// ---- earning animations: "+N" popups, and the EXP / gold numbers counting up into the totals
+const reduceMotion = () => { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+const inView = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= window.innerHeight; };
+function gainFx(kind, amount, from) {
+  if (!amount || amount <= 0 || reduceMotion()) return;
+  const fx = $("fx"); if (fx.children.length > 14) return;
+  const chip = $(kind === "exp" ? "expChip" : "goldChip");
+  const origin = from && inView(from) ? from : inView(chip) ? chip : $("board");     // rise from where you can see it
+  const r = origin.getBoundingClientRect();
+  const x = r.width ? r.left + r.width / 2 : window.innerWidth / 2, y = r.width ? r.top + (origin === chip ? 0 : Math.min(30, r.height / 2)) : 90;
+  const el = document.createElement("span");
+  el.className = `gain ${kind}`;
+  el.innerHTML = kind === "gold" ? `+${amount.toLocaleString()} <span class="coin"></span>` : `+${amount.toLocaleString()} EXP`;
+  el.style.left = Math.round(x + (Math.random() - 0.5) * 36) + "px"; el.style.top = Math.round(y) + "px";
+  fx.append(el);
+  const done = () => el.remove(); el.addEventListener("animationend", done); setTimeout(done, 2500);
+}
+const bump = (el) => { if (reduceMotion()) return; el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); };
+const disp = { exp: null, gold: 0, tExp: null, tGold: null, raf: 0 };               // what the chips currently show
+function paintStats() {
+  const e = Math.round(disp.exp), g = Math.round(disp.gold), lv = PR.levelInfo(e);
+  $("expChip").textContent = `⭐ ${e.toLocaleString()} EXP`;
+  $("goldChip").innerHTML = `<span class="coin"></span> ${g.toLocaleString()}`;
+  $("lvlChip").textContent = `Lv ${lv.level}`;
+  $("lvlFill").style.width = Math.round(lv.pct * 100) + "%";
+  $("lvlBar").title = `${lv.into.toLocaleString()} / ${lv.need.toLocaleString()} EXP to level ${lv.level + 1}`;
+  $("lvlText").textContent = `${lv.into.toLocaleString()} / ${lv.need.toLocaleString()}`;
+}
+const snapStats = () => { cancelAnimationFrame(disp.raf); disp.exp = null; disp.tExp = null; disp.tGold = null; };   // next paint jumps straight to the new totals (login, logout)
+function tweenStats(exp, gold) {
+  if (disp.exp === null || reduceMotion()) { cancelAnimationFrame(disp.raf); disp.exp = disp.tExp = exp; disp.gold = disp.tGold = gold; paintStats(); return; }
+  if (exp === disp.tExp && gold === disp.tGold) return;
+  if (exp !== disp.tExp) bump($("expChip")); if (gold !== disp.tGold) bump($("goldChip"));
+  const f = { exp: disp.exp, gold: disp.gold }, t0 = performance.now();
+  disp.tExp = exp; disp.tGold = gold;
+  const dur = Math.min(1600, 500 + 140 * Math.log2(1 + Math.max(Math.abs(exp - f.exp), Math.abs(gold - f.gold))));
+  cancelAnimationFrame(disp.raf);
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);          // ease-out: fast at first, settling into the total
+    disp.exp = f.exp + (exp - f.exp) * e; disp.gold = f.gold + (gold - f.gold) * e;
+    if (k >= 1) { disp.exp = exp; disp.gold = gold; }
+    paintStats();
+    if (k < 1) disp.raf = requestAnimationFrame(step);
+  };
+  disp.raf = requestAnimationFrame(step);
+}
+
+let shownLevel = null;                                     // the level last shown, so a level-up can be announced
 function renderProgress() {
   const st = prog.state, life = st.life, avg = prog.avgPerfectLength();
-  $("expChip").textContent = `⭐ ${st.exp.toLocaleString()} EXP`;
+  const lv = PR.levelInfo(st.exp);
+  tweenStats(st.exp, st.gold);
+  if (shownLevel !== null && lv.level > shownLevel) toast(`Level up! You reached level ${lv.level}`, "achievement");
+  shownLevel = lv.level;
+  const sk = st.streak || { n: 0, today: false }, sc = $("streakChip");
+  sc.classList.toggle("hidden", !prog.account);
+  sc.classList.toggle("pending", !sk.today);
+  sc.textContent = `🔥 ${sk.n} day${sk.n === 1 ? "" : "s"}`;
+  sc.title = sk.today ? "Today's perfect line is done. Come back tomorrow to keep the streak." : sk.n ? "Solve one line or puzzle perfectly today to keep your streak alive." : "Solve a line or puzzle perfectly (no wrong moves, no hints) to start a streak.";
   const weak = prog.weakest(5);
   $("progStats").innerHTML = `
     <h2>Progress</h2>
     <table class="progtab">
+      <tr><td>Level</td><td>${lv.level}</td></tr>
+      <tr><td colspan="2"><div class="lvbar bigbar"><i style="width:${Math.round(lv.pct * 100)}%"></i></div><small class="muted">${lv.into.toLocaleString()} / ${lv.need.toLocaleString()} EXP to level ${lv.level + 1}</small></td></tr>
       <tr><td>Training EXP</td><td>${st.exp.toLocaleString()}</td></tr>
-      <tr><td>Lines that still earn EXP today</td><td>${prog.linesLeft()} of ${PR.RULES.linesPerDay}</td></tr>
+      <tr><td>Gold</td><td>${st.gold.toLocaleString()} <span class="coin"></span></td></tr>
+      ${prog.account ? `<tr><td>Daily streak</td><td>${sk.n} day${sk.n === 1 ? "" : "s"} ${sk.today ? "✓" : ""}</td></tr>
+      <tr><td colspan="2"><small class="muted">${sk.today ? `Today's perfect line is done. Tomorrow pays ${PR.streakReward(sk.n + 1).exp.toLocaleString()} EXP and ${PR.streakReward(sk.n + 1).gold.toLocaleString()} gold.`
+        : `Solve one line or puzzle perfectly today for ${PR.streakReward(sk.n + 1).exp.toLocaleString()} EXP and ${PR.streakReward(sk.n + 1).gold.toLocaleString()} gold${sk.n ? " and to keep the streak" : ""}.`}</small></td></tr>` : ""}
       <tr><td>Tomato EXP left today</td><td>${prog.tomatoLeft()} of ${PR.RULES.tomatoPerDay}</td></tr>
+      <tr><td>Tomato gold left today</td><td>${prog.tomatoGoldLeft()} of ${PR.RULES.tomatoGoldPerDay}</td></tr>
       <tr><td>Lines completed</td><td>${life.lines.toLocaleString()}</td></tr>
       <tr><td>Puzzles solved</td><td>${life.puzzles.toLocaleString()}</td></tr>
       <tr><td>Perfect lines</td><td>${life.perfect.toLocaleString()}</td></tr>
@@ -1496,7 +1568,7 @@ function renderProgress() {
     <h2>Lines to work on</h2>
     ${weak.length ? weak.map((w) => `<div class="weak"><span>${esc(w.name)}</span><span>${Math.round(w.rate * 100)}% perfect · ${w.att} tries</span></div>`).join("")
                   : '<small class="muted">Complete a line at least twice and your trickiest ones show up here.</small>'}
-    <small class="muted" style="display:block;margin-top:10px">Rules: 1 EXP per move, +5 for a perfect line, +5 more at 10, 15, 20 and 25 moves. Only ${PR.RULES.linesPerDay} lines per day earn EXP.</small>`;
+    <small class="muted" style="display:block;margin-top:10px">Rules: 1 EXP per move, +5 for a perfect line, +5 more at 10, 15, 20 and 25 moves. Each line or puzzle earns EXP for its first ${PR.RULES.perLinePerDay} completions per day, and ${PR.RULES.goldPerLine} gold the first time each day. Every ${PR.RULES.tomatoPerGold} tomatoes earn 1 gold (up to ${PR.RULES.tomatoGoldPerDay} a day).</small>`;
   renderTomatoExp();
   const ae = document.activeElement;
   if (!(ae && ae.tagName === "INPUT" && $("acctBox").contains(ae))) renderAccount();     // keeps "last synced" fresh, but never while someone is typing in it
@@ -1538,13 +1610,14 @@ function throwTomato(ev) {
   setTimeout(() => { if (img.isConnected) img.src = TOMATO_LAST; }, TOMATO_MS);   // the last frame stays until you exit
   tomato.device++; lsSet("tomatoDevice", tomato.device);
   tomato.pending += counterUrl() && !prog.account ? 1 : 0; lsSet("tomatoPending", tomato.pending);
+  gainFx("exp", r.exp, $("tomatoBtn")); if (r.gold > 0) setTimeout(() => gainFx("gold", r.gold, $("tomatoBtn")), 180);
   renderTomatoCount(); renderProgress();
   if (r.achievement) toast("Procedure Performed!", "achievement");
 }
 
 // ------------------------------------------------------------- leaderboard
-const BOARD_INFO = { exp: ["EXP", "EXP", (v) => v.toLocaleString()], lines: ["Opening lines solved", "Lines", (v) => v.toLocaleString()], puzzles: ["Puzzles solved", "Puzzles", (v) => v.toLocaleString()],
-                     tomatoes: ["Tomatoes thrown", "Tomatoes", (v) => v.toLocaleString()], avglen: ["Average length of perfect lines", "Avg moves", (v) => Number(v).toFixed(1)] };
+const BOARD_INFO = { exp: ["Total EXP", "EXP", (v) => v.toLocaleString()], lines: ["Opening lines solved", "Lines", (v) => v.toLocaleString()], puzzles: ["Puzzles solved", "Puzzles", (v) => v.toLocaleString()],
+                     tomatoes: ["Tomatoes thrown", "Tomatoes", (v) => v.toLocaleString()], avglen: ["Average length of perfectly completed lines", "Avg moves", (v) => Number(v).toFixed(1)] };
 const board = { data: null, at: 0, which: "exp", ranks: null };
 async function loadBoard(force = false) {
   const note = $("boardNote");
@@ -1564,9 +1637,10 @@ function renderBoard() {
   for (const b of $("boardTabs").querySelectorAll("button")) b.classList.toggle("secondary", b.dataset.b !== which);
   const rows = board.data ? board.data[which] || [] : [];
   const mine = (prog.state.nick || "").toLowerCase();
-  $("boardTable").innerHTML = `<tr><th>#</th><th>${esc(title)}</th><th>${esc(head)}</th></tr>` +
-    (rows.length ? rows.map((r) => `<tr class="${prog.account && r.nick.toLowerCase() === mine ? "me" : ""}"><td>${r.rank}</td><td>${esc(r.nick)}</td><td>${fmt(r.value)}</td></tr>`).join("")
-                 : `<tr><td colspan="3" class="muted">${board.data ? "Nobody here yet. Be the first!" : "…"}</td></tr>`);
+  $("boardTitle").textContent = title;
+  $("boardTable").innerHTML = `<tr><th>#</th><th>Player</th><th>${esc(head)}</th><th>Level</th></tr>` +
+    (rows.length ? rows.map((r) => `<tr class="${prog.account && r.nick.toLowerCase() === mine ? "me" : ""}"><td>${r.rank}</td><td>${esc(r.nick)}</td><td>${fmt(r.value)}</td><td>${r.exp != null ? PR.levelInfo(r.exp).level : "–"}</td></tr>`).join("")
+                 : `<tr><td colspan="4" class="muted">${board.data ? "Nobody here yet. Be the first!" : "…"}</td></tr>`);
   const me = $("boardMe");
   if (!prog.account) { me.textContent = counterUrl() ? "Create an account in “Your progress” to join the leaderboard." : ""; return; }
   const st = prog.state, rk = board.ranks && board.ranks[which];

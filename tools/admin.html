@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>My Chess Trainer admin</title>
+<style>
+  body { font:15px/1.5 system-ui, sans-serif; background:#1f1d1b; color:#e8e4df; margin:0; padding:20px; }
+  main { max-width:720px; margin:0 auto; }
+  h1 { font-size:20px; } label { display:block; color:#9a948c; margin:12px 0 4px; font-size:13px; }
+  input { width:100%; box-sizing:border-box; background:#1a1816; color:inherit; border:1px solid #3c3834; border-radius:6px; padding:9px; font:inherit; }
+  button { background:#7fa650; color:#10140a; border:0; border-radius:8px; padding:9px 14px; font:inherit; font-weight:600; cursor:pointer; margin:10px 8px 0 0; }
+  button.s { background:#4a4540; color:#e8e4df; } button.d { background:#5a2f2d; color:#f3c9c7; }
+  .card { background:#2b2825; border:1px solid #3c3834; border-radius:10px; padding:14px; margin-top:14px; }
+  .code { font-family:ui-monospace, Menlo, monospace; font-size:20px; letter-spacing:.06em; background:#1a1816; border:2px dashed #7fa650; border-radius:8px; padding:10px; margin:8px 0; text-align:center; user-select:all; }
+  .msg.bad { color:#d9534f; } .msg.good { color:#7fa650; } small, .m { color:#9a948c; }
+  table { width:100%; border-collapse:collapse; } td, th { padding:5px 6px; border-top:1px solid #3c3834; text-align:left; font-size:14px; } th { color:#9a948c; font-weight:500; }
+  tr.row { cursor:pointer; } tr.row:hover { background:#33302c; }
+</style>
+</head>
+<body>
+<main>
+  <h1>My Chess Trainer admin</h1>
+  <p class="m">Open this file from your own computer (don't upload it with the app). It talks to your online service using the secret <b>ADMIN_TOKEN</b> you set in Cloudflare. Nothing here is saved.</p>
+  <label for="url">Service address</label>
+  <input id="url" value="https://tomato-counter.calvin-593.workers.dev" autocomplete="off">
+  <label for="token">Admin token</label>
+  <input id="token" type="password" autocomplete="off" placeholder="the ADMIN_TOKEN secret">
+  <label for="nick">Nickname (or part of one)</label>
+  <input id="nick" autocomplete="off" placeholder="e.g. Ada">
+  <button id="list">Search / list accounts</button>
+  <button id="find" class="s">Show recovery code</button>
+  <button id="reset" class="s">Issue a new code</button>
+  <button id="del" class="d">Delete account</button>
+  <div id="msg" class="msg" role="status"></div>
+  <div id="out"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const when = (t) => t ? new Date(t).toLocaleString() : "never";
+async function call(action) {
+  const url = $("url").value.trim().replace(/\/+$/, "");
+  const r = await fetch(url + "/admin", { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ token: $("token").value, action, nick: $("nick").value.trim() }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Request failed (" + r.status + ")");
+  return j;
+}
+const say = (t, bad) => { $("msg").textContent = t; $("msg").className = "msg " + (bad ? "bad" : "good"); };
+function card(a, extra = "") {
+  return `<div class="card"><b>${esc(a.nick)}</b> <small>created ${when(a.created)} · last sync ${when(a.lastSync)}</small>
+    <table><tr><th>EXP</th><th>Gold</th><th>Lines</th><th>Puzzles</th><th>Tomatoes</th><th>Streak</th><th>Flags</th></tr>
+    <tr><td>${a.exp}</td><td>${a.gold}</td><td>${a.lines}</td><td>${a.puzzles}</td><td>${a.tomatoes}</td><td>${a.streak}</td><td>${a.flagged}</td></tr></table>${extra}</div>`;
+}
+async function run(action, fn) {
+  say("Working…");
+  try { fn(await call(action)); } catch (e) { say(e.message === "Failed to fetch" ? "Couldn't reach the service. Check the address." : e.message, true); }
+}
+$("list").onclick = () => run("list", (j) => {
+  say(`${j.accounts.length} account(s).` + (j.codeKeySet ? "" : " CODE_KEY isn't set, so recovery codes aren't being stored."));
+  $("out").innerHTML = `<div class="card"><table><tr><th>Nickname</th><th>EXP</th><th>Last sync</th><th>Code stored</th></tr>${
+    j.accounts.map((a) => `<tr class="row" data-n="${esc(a.nick)}"><td>${esc(a.nick)}</td><td>${a.exp}</td><td>${esc(when(a.lastSync))}</td><td>${a.hasCode ? "yes" : "no"}</td></tr>`).join("")}</table><small>Click a row to select it.</small></div>`;
+  for (const tr of $("out").querySelectorAll("tr.row")) tr.onclick = () => { $("nick").value = tr.dataset.n; };
+});
+$("find").onclick = () => run("find", (j) => {
+  say(j.account.code ? "Found." : "No recoverable code is stored for this account (it was created before CODE_KEY was set and hasn't signed in since). Use “Issue a new code”.", !j.account.code);
+  $("out").innerHTML = card(j.account, j.account.code ? `<p>Recovery code:</p><div class="code">${esc(j.account.code)}</div><small>Only give this to the person who owns the account.</small>` : "");
+});
+$("reset").onclick = () => {
+  if (!$("nick").value.trim()) return say("Enter the exact nickname first.", true);
+  if ($("reset").dataset.armed !== $("nick").value.trim()) { $("reset").dataset.armed = $("nick").value.trim(); return say("Press “Issue a new code” again to confirm. The old code will stop working.", true); }
+  $("reset").dataset.armed = ""; run("reset", (j) => { say("New code issued."); $("out").innerHTML = `<div class="card"><b>${esc(j.nick)}</b><p>New recovery code:</p><div class="code">${esc(j.code)}</div></div>`; });
+};
+$("del").onclick = () => {
+  if (!$("nick").value.trim()) return say("Enter the exact nickname first.", true);
+  if ($("del").dataset.armed !== $("nick").value.trim()) { $("del").dataset.armed = $("nick").value.trim(); return say("Press “Delete account” again to confirm. This can't be undone.", true); }
+  $("del").dataset.armed = ""; run("delete", (j) => { say("Deleted " + j.deleted + "."); $("out").innerHTML = ""; });
+};
+</script>
+</body>
+</html>

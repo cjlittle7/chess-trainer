@@ -147,7 +147,7 @@ Replace `assets/study/photo.jpg` to change the picture; make sure you have the r
 ## Training EXP (stage 1: on this device)
 
 - **Completing a line or puzzle:** 1 EXP per move you play. A **perfect** line (no wrong attempts, no hints) adds +5, and +5 more for each of 10, 15, 20 and 25 moves reached (so a perfect 20-move line earns 20 + 5 + 15 = 40).
-- **Daily limit:** only the first 5 completions each day earn EXP (your local day). Further lines still count towards your lifetime totals.
+- **Daily limit:** each line or puzzle earns EXP for its first 5 completions per day (your local day). More completions still count towards your lifetime totals.
 - **Tomatoes:** +1 EXP per throw, up to 100 EXP per day. Reaching the 100th shows "Procedure Performed!". More throws still play but give no EXP.
 - **Auto-clickers:** script-made clicks, presses faster than about 11 a second, or ten presses with machine-perfect timing trigger a warning. The burst's EXP and tomatoes are taken back, and the button is inactive for 30 minutes.
 - **Your progress** panel shows EXP, today's allowances, lifetime lines / puzzles / perfect lines, your average perfect-line length, and your trickiest lines. You can set a nickname there.
@@ -171,3 +171,27 @@ With the online service switched on, the Progress panel offers **Create account*
 5. `config.js` doesn't change (`tomatoCounterUrl` is the same address). Upload the new app files to GitHub and reopen the app twice.
 
 **Moderation:** in the D1 database's **Console** you can remove an account with `DELETE FROM accounts WHERE nick_lc = 'someone';` (use lower case). Extend the `BLOCKED` list at the top of the worker to refuse more nickname words.
+
+
+## Gold, levels and the daily streak (v2.9)
+
+- **Gold:** +10 the first time you complete each line or puzzle each day, and 1 for every 5 tomatoes thrown (up to 20 a day). For now it is a counter; nothing spends it yet.
+- **Levels:** you start at level 1. Going from level n to n+1 takes 100 + (100 × (n − 1))^(1.001^n) EXP, rounded down to a multiple of 10 (100 for level 1, 200 for level 2, 300 for level 3, 510 for level 5, 1,060 for level 10). The bar under the tabs shows your progress; a level-up pops up.
+- **Daily streak (needs an account):** the first line or puzzle you solve *perfectly* (no wrong moves, no hints) each day extends your streak. Day n pays **50 + 10 × n EXP** (at most 1,000) and **10 + 5 × n gold** (at most 500). Miss a whole day and it starts again at 1. The 🔥 counter next to your level shows the streak; it is dimmed until you've done today's perfect line. The server awards the bonus when your device next syncs.
+
+## Owner tools: finding a lost recovery code
+
+Players who lose their recovery code can only be helped if you can look it up, so the service can keep each code **encrypted**. A copy of the database alone shows nothing; the key is a secret that only exists in Cloudflare.
+
+1. In the worker's **Settings → Variables and Secrets → Add**, add two **secrets** (type *Secret*): `CODE_KEY` (any long random text, e.g. 40 random characters; keep your own copy, because without it stored codes can't be read) and `ADMIN_TOKEN` (another long random text, at least 16 characters). Deploy.
+2. Open `tools/admin.html` **from your own computer** (double-click the file; don't upload it with the app). Enter your worker address and the admin token. You can search accounts, **show a recovery code**, **issue a new code** (the old one stops working) or **delete an account**.
+3. Accounts created before `CODE_KEY` existed have no stored code until that person next signs in or syncs; for them use **Issue a new code**. If you'd rather not keep codes at all, simply don't set `CODE_KEY`.
+
+Keep both secrets private. Anyone with the admin token and the key can read recovery codes, so only hand a code to the person who owns the account. The app tells new players that the site owner can look up their code to help them.
+
+## Earning animations (v2.10)
+
+- Every EXP and gold gain floats up as a "+N" popup: from the counters under the tabs when you finish a line or puzzle (or from the board if the counters are scrolled out of view), and from the TOMATO button when you throw. The EXP and gold numbers then count up into their new totals and the level bar fills as they do.
+- People who have "reduce motion" switched on in their device settings get no popups and the totals simply update.
+- The gold coin is drawn by the app instead of an emoji, because some phones can't show the coin emoji.
+- Every leaderboard has a **Level** column (worked out from the player's EXP). This needs the updated `tools/tomato-counter-worker.js`; with the old worker the column shows "–".
