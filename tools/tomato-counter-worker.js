@@ -44,6 +44,24 @@ function lineExp(moves, perfect) {
   const long = RULES.longBonus.filter((m) => moves >= m).length * RULES.longBonusExp;
   return { base, perfect: RULES.perfect, long, total: base + RULES.perfect + long };
 }
+// Collectable achievements (keep in step with ACHIEVEMENTS in src/progress.js). A tier unlocks when its stat reaches the threshold and then stays unlocked.
+const BIG = [1, 10, 100, 1000, 10000, 100000];
+const ACH = [
+  { id: "perfectLines", tiers: BIG, stat: (a) => Math.max(0, a.perfect - a.perfect_puzzles) },
+  { id: "perfectPuzzles", tiers: BIG, stat: (a) => a.perfect_puzzles },
+  { id: "exp", tiers: BIG, stat: (a) => a.exp },
+  { id: "gold", tiers: BIG, stat: (a) => a.gold_total },
+  { id: "tomatoes", tiers: BIG, stat: (a) => a.tomatoes },
+  { id: "run", tiers: [10, 50, 100, 1000, 10000], stat: (a) => a.run_best },
+  { id: "login", tiers: [7, 30, 100, 365], stat: (a) => a.login_best },
+];
+function unlockAch(a, now) {
+  let have = {}; try { have = JSON.parse(a.ach || "{}"); } catch { /* start again */ }
+  const added = [];
+  for (const c of ACH) { const v = c.stat(a); for (const t of c.tiers) { const id = c.id + ":" + t; if (v >= t && !have[id]) { have[id] = now; added.push(id); } } }
+  if (added.length) a.ach = JSON.stringify(have);
+  return added;
+}
 function streakReward(n) {
   const k = Math.max(1, Math.floor(n));
   return { exp: Math.min(RULES.streakExp.cap, RULES.streakExp.base + RULES.streakExp.step * k),
@@ -97,6 +115,8 @@ const SCHEMA = [
 const ADDED_COLUMNS = [                       // columns added after the first release: older databases are upgraded in place
   ["gold", "INTEGER NOT NULL DEFAULT 0"], ["streak", "INTEGER NOT NULL DEFAULT 0"], ["streak_day", "TEXT NOT NULL DEFAULT ''"],
   ["tomato_today", "INTEGER NOT NULL DEFAULT 0"], ["code_enc", "TEXT NOT NULL DEFAULT ''"],
+  ["perfect_puzzles", "INTEGER NOT NULL DEFAULT 0"], ["gold_total", "INTEGER NOT NULL DEFAULT 0"], ["run", "INTEGER NOT NULL DEFAULT 0"], ["run_best", "INTEGER NOT NULL DEFAULT 0"],
+  ["login_streak", "INTEGER NOT NULL DEFAULT 0"], ["login_best", "INTEGER NOT NULL DEFAULT 0"], ["login_day", "TEXT NOT NULL DEFAULT ''"], ["ach", "TEXT NOT NULL DEFAULT '{}'"],
 ];
 let schemaReady = false;
 async function ensureSchema(env) {
@@ -104,6 +124,7 @@ async function ensureSchema(env) {
   await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
   const have = new Set(((await env.DB.prepare("PRAGMA table_info(accounts)").all()).results || []).map((r) => r.name));
   for (const [name, def] of ADDED_COLUMNS) if (!have.has(name)) await env.DB.prepare(`ALTER TABLE accounts ADD COLUMN ${name} ${def}`).run();
+  if (!have.has("gold_total")) await env.DB.prepare("UPDATE accounts SET gold_total = gold").run();      // lifetime gold starts from what players already hold
   const meta = await env.DB.prepare("SELECT v FROM meta WHERE k='tomatoes'").first();
   if (!meta) {                                                    // first run: carry over the old KV total, if the old binding is still there
     let old = 0;
@@ -127,6 +148,17 @@ async function accountByCode(env, code) {
   }
   return a;
 }
+/** Counts today as a signed-in day. Returns true if anything changed. */
+function touchLogin(a, now) {
+  const day = dayOf(now, a.tz);
+  if (a.login_day === day) return false;
+  a.login_streak = a.login_day === prevDay(day) ? a.login_streak + 1 : 1;
+  a.login_best = Math.max(a.login_best, a.login_streak); a.login_day = day;
+  return true;
+}
+async function saveMeta(env, a, changed) {
+  if (changed) await env.DB.prepare("UPDATE accounts SET login_streak=?, login_best=?, login_day=?, ach=? WHERE id=?").bind(a.login_streak, a.login_best, a.login_day, a.ach, a.id).run();
+}
 const globalTomatoes = async (env) => (await env.DB.prepare("SELECT v FROM meta WHERE k='tomatoes'").first())?.v || 0;
 async function todayLines(env, a, now) {
   const rows = (await env.DB.prepare("SELECT key, n FROM linedaily WHERE account = ? AND day = ?").bind(a.id, dayOf(now, a.tz)).all()).results || [];
@@ -136,9 +168,12 @@ async function todayLines(env, a, now) {
 function profileOf(a, global, now, lines = {}) {
   const today = dayOf(now, a.tz), fresh = a.day === today;           // yesterday's counters are not today's
   const live = a.streak_day === today || a.streak_day === prevDay(today);
+  const loginLive = a.login_day === today || a.login_day === prevDay(today);
+  let ach = {}; try { ach = JSON.parse(a.ach || "{}"); } catch { /* none */ }
   return {
     nick: a.nick, exp: a.exp, gold: a.gold, flagged: a.flagged, global,
-    life: { lines: a.lines, puzzles: a.puzzles, perfect: a.perfect, perfectMoves: a.perfect_moves, tomatoes: a.tomatoes },
+    life: { lines: a.lines, puzzles: a.puzzles, perfect: a.perfect, perfectPuzzles: a.perfect_puzzles, perfectMoves: a.perfect_moves, goldTotal: a.gold_total, tomatoes: a.tomatoes },
+    run: { cur: a.run, best: a.run_best }, login: { cur: loginLive ? a.login_streak : 0, best: a.login_best }, ach,
     tomatoExpToday: fresh ? a.tomato_exp_today : 0, tomatoToday: fresh ? a.tomato_today : 0,
     streak: { n: live ? a.streak : 0, today: a.streak_day === today },
     todayLines: lines,
@@ -180,7 +215,8 @@ async function register(env, body, request, now) {
   const code = newCode(), norm = normCode(code);
   const row = {
     id: hex(crypto.getRandomValues(new Uint8Array(8))), nick, nick_lc: nick.toLowerCase(), code_hash: await sha256(norm), code_enc: await seal(env, norm),
-    tz, created: now, last_sync: 0, exp: int(imp.exp, 0, 500), gold: int(imp.gold, 0, 200), lines, puzzles, perfect,
+    tz, created: now, last_sync: 0, exp: int(imp.exp, 0, 500), gold: int(imp.gold, 0, 200), gold_total: int(imp.gold, 0, 200), lines, puzzles, perfect, perfect_puzzles: int(L.perfectPuzzles, 0, Math.min(perfect, puzzles)),
+    login_streak: 1, login_best: 1, login_day: dayOf(now, tz),
     perfect_moves: int(L.perfectMoves, 0, perfect * 25), tomatoes: int(L.tomatoes, 0, 100), flagged: 0,
   };
   const cols = Object.keys(row);
@@ -193,7 +229,8 @@ async function register(env, body, request, now) {
     stmts.push(env.DB.prepare(PERLINE_UPSERT).bind(row.id, String(key).slice(0, 60), String(v.name || "").slice(0, 80), att, int(v.perfect, 0, att), int(v.wrong, 0, 5000), String(v.last || "").slice(0, 10)));
   }
   try { await env.DB.batch(stmts); } catch { throw new HttpError(409, "That nickname is taken."); }
-  const a = { ...row, day: "", streak: 0, streak_day: "", tomato_today: 0, tomato_exp_today: 0 };
+  const a = { ...row, day: "", streak: 0, streak_day: "", tomato_today: 0, tomato_exp_today: 0, run: 0, run_best: 0, ach: "{}" };
+  if (unlockAch(a, now).length) await env.DB.prepare("UPDATE accounts SET ach = ? WHERE id = ?").bind(a.ach, a.id).run();
   return { code, ...profileOf(a, await globalTomatoes(env), now) };
 }
 
@@ -202,7 +239,9 @@ async function login(env, body, now) {
   const per = (await env.DB.prepare("SELECT key, name, att, perfect, wrong, last FROM perline WHERE account = ? ORDER BY att DESC LIMIT ?").bind(a.id, RULES.perLineRows).all()).results || [];
   const perLine = {};
   for (const r of per) perLine[r.key] = { name: r.name, att: r.att, perfect: r.perfect, wrong: r.wrong, last: r.last };
-  return { ...profileOf(a, await globalTomatoes(env), now, await todayLines(env, a, now)), perLine };
+  const changed = touchLogin(a, now), newAch = unlockAch(a, now);
+  await saveMeta(env, a, changed || newAch.length > 0);
+  return { ...profileOf(a, await globalTomatoes(env), now, await todayLines(env, a, now)), perLine, newAch };
 }
 
 async function sync(env, body, now) {
@@ -213,6 +252,7 @@ async function sync(env, body, now) {
   const has = lines.length || (tom && tom.n > 0) || ev.flagged > 0;
   let warn = false, gainedExp = 0, gainedGold = 0;
   const streakAwards = [];
+  const addGold = (g) => { a.gold += g; a.gold_total += g; gainedGold += g; };
 
   if (has) {
     if (now - a.last_sync < RULES.minSyncGapMs) throw new HttpError(429, "Syncing too often.", { retryMs: RULES.minSyncGapMs - (now - a.last_sync) });
@@ -242,16 +282,16 @@ async function sync(env, body, now) {
       if (e.perfect && a.streak_day !== a.day) {                       // first perfect line or puzzle of the day: the streak grows
         a.streak = a.streak_day === prevDay(a.day) ? a.streak + 1 : 1; a.streak_day = a.day;
         const r = streakReward(a.streak);
-        a.exp += r.exp; a.gold += r.gold; gainedExp += r.exp; gainedGold += r.gold; streakAwards.push({ n: a.streak, exp: r.exp, gold: r.gold });
+        a.exp += r.exp; gainedExp += r.exp; addGold(r.gold); streakAwards.push({ n: a.streak, exp: r.exp, gold: r.gold });
       }
       if (a.solved_today >= RULES.solvedPerDay) continue;              // beyond this the completion isn't counted at all
       a.solved_today++;
       if (e.puzzle) a.puzzles++; else a.lines++;
-      if (e.perfect) { a.perfect++; a.perfect_moves += e.moves; }
+      if (e.perfect) { a.perfect++; a.perfect_moves += e.moves; if (e.puzzle) a.perfect_puzzles++; a.run++; if (a.run > a.run_best) a.run_best = a.run; } else a.run = 0;
       const k = a.day + "|" + e.key, n = used.get(k) || 0;
       used.set(k, n + 1); dirty.add(k);
       if (n < RULES.perLinePerDay) { const g = lineExp(e.moves, e.perfect).total; a.exp += g; gainedExp += g; }
-      if (n === 0) { a.gold += RULES.goldPerLine; gainedGold += RULES.goldPerLine; }
+      if (n === 0) addGold(RULES.goldPerLine);
       const p = per.get(e.key) || { name: e.name, att: 0, perfect: 0, wrong: 0, last: "" };
       p.name = e.name; p.att++; if (e.perfect) p.perfect++; p.wrong += e.wrong; p.last = a.day;
       per.set(e.key, p);
@@ -268,13 +308,13 @@ async function sync(env, body, now) {
       a.tomato_exp_today += g; a.exp += g; gainedExp += g; a.tomatoes += ok; added = ok;
       const goldOf = (t) => Math.min(RULES.tomatoGoldPerDay, Math.floor(t / RULES.tomatoPerGold));
       const gg = goldOf(a.tomato_today + ok) - goldOf(a.tomato_today);
-      a.tomato_today += ok; a.gold += gg; gainedGold += gg;
+      a.tomato_today += ok; addGold(gg);
     }
     a.flagged += int(ev.flagged, 0, 5);
     a.last_sync = now;
 
-    const stmts = [env.DB.prepare(`UPDATE accounts SET exp=?, gold=?, lines=?, puzzles=?, perfect=?, perfect_moves=?, tomatoes=?, flagged=?, day=?, solved_today=?, tomato_exp_today=?, tomato_today=?, streak=?, streak_day=?, last_sync=? WHERE id=?`)
-      .bind(a.exp, a.gold, a.lines, a.puzzles, a.perfect, a.perfect_moves, a.tomatoes, a.flagged, a.day, a.solved_today, a.tomato_exp_today, a.tomato_today, a.streak, a.streak_day, a.last_sync, a.id)];
+    const stmts = [env.DB.prepare(`UPDATE accounts SET exp=?, gold=?, gold_total=?, lines=?, puzzles=?, perfect=?, perfect_puzzles=?, run=?, run_best=?, perfect_moves=?, tomatoes=?, flagged=?, day=?, solved_today=?, tomato_exp_today=?, tomato_today=?, streak=?, streak_day=?, last_sync=? WHERE id=?`)
+      .bind(a.exp, a.gold, a.gold_total, a.lines, a.puzzles, a.perfect, a.perfect_puzzles, a.run, a.run_best, a.perfect_moves, a.tomatoes, a.flagged, a.day, a.solved_today, a.tomato_exp_today, a.tomato_today, a.streak, a.streak_day, a.last_sync, a.id)];
     if (added) stmts.push(env.DB.prepare("UPDATE meta SET v = v + ? WHERE k = 'tomatoes'").bind(added));
     for (const k of dirty) { const [d, ...rest] = k.split("|"); stmts.push(env.DB.prepare("INSERT INTO linedaily(account, key, day, n) VALUES(?,?,?,?) ON CONFLICT(account, key, day) DO UPDATE SET n = excluded.n").bind(a.id, rest.join("|"), d, used.get(k))); }
     stmts.push(env.DB.prepare("DELETE FROM linedaily WHERE account = ? AND day < ?").bind(a.id, dayOf(now - 3 * 86400000, tz)));
@@ -287,7 +327,9 @@ async function sync(env, body, now) {
     }
     await env.DB.batch(stmts);
   }
-  const out = { ...profileOf(a, await globalTomatoes(env), now, await todayLines(env, a, now)), warn, gained: { exp: gainedExp, gold: gainedGold }, streakAwards,
+  const changed = touchLogin(a, now), newAch = unlockAch(a, now);       // any sync counts today as a signed-in day
+  await saveMeta(env, a, changed || newAch.length > 0);
+  const out = { ...profileOf(a, await globalTomatoes(env), now, await todayLines(env, a, now)), warn, gained: { exp: gainedExp, gold: gainedGold }, streakAwards, newAch,
                 ranks: body.ranks ? await ranksOf(env, a) : undefined };   // undefined is left out of the JSON
   return out;
 }
@@ -352,7 +394,7 @@ async function admin(env, body, now) {
 
 // ---------------------------------------------------------------- entry
 export default {
-  lineExp, streakReward,                     // exposed only so the tests can check they match src/progress.js
+  lineExp, streakReward, achievements: ACH.map((c) => ({ id: c.id, tiers: c.tiers })),   // exposed only so the tests can check they match src/progress.js
   async fetch(request, env) {
     const origins = env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(",").map((s) => s.trim()) : DEFAULT_ORIGINS;
     const origin = request.headers.get("Origin") || "";

@@ -195,3 +195,11 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - People who have "reduce motion" switched on in their device settings get no popups and the totals simply update.
 - The gold coin is drawn by the app instead of an emoji, because some phones can't show the coin emoji.
 - Every leaderboard has a **Level** column (worked out from the player's EXP). This needs the updated `tools/tomato-counter-worker.js`; with the old worker the column shows "–".
+
+## Achievements, perfect runs and tab changes (v2.11)
+
+- **Tabs:** STUDY (the trainer), 🍅 (the study break), ACHIEVEMENTS and LEADERBOARD.
+- **Achievements:** 39 collectable badges. 1 / 10 / 100 / 1,000 / 10,000 / 100,000 for perfect lines, perfect puzzles, lifetime EXP, lifetime gold and tomatoes thrown; 10 / 50 / 100 / 1,000 / 10,000 perfect lines or puzzles in a row; 7 / 30 / 100 / 365 days in a row signed in (needs an account). Badges stay unlocked once earned. A toast announces each new one.
+- **Perfect in a row:** the 🎯 chip at the top shows your current run of perfect lines and puzzles. A line or puzzle finished with a wrong move or a hint ends it; your best is kept. "Days in a row" counts days you open the app signed in, and is separate from the daily perfect-solve streak.
+- **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
+- The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
