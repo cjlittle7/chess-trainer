@@ -204,6 +204,13 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.17 changes
+
+- **Tabs**: STUDY, LEADERBOARD, ACHIEVEMENTS, TYCOON, ABOUT, MERCH / SUPPORT FREE CHESS, and the 🍅 on the far right (the row wraps on a phone).
+- **Tycoon**: four tables in total (levels 10, 50 and 100 open tables 2-4; saves that had a fifth table lose it). Each table has an **On** switch; a switched-off table plays nothing and folds up (one table must stay on). Every table plays at the highest stage reached on any table, and new tables start there.
+- **Table View**: the "🏟 Table View" button on the Tycoon page shows every board at once on a grey tournament table, each with name plates and a chess clock (the clock of the side to move runs). Esc or Close leaves it.
+- **About and Merch / Support pages**: everyone can read them; only you can edit them. Under the page, open **Owner login** and enter your `ADMIN_TOKEN` (the same secret the admin page uses). You can then edit the About text (bold, headings, lists, links, images, colours), pick a font, size, text colour and background, and add basic CSS (scoped to that page; scripts and unsafe CSS are removed). The Support page has fields for Venmo, PayPal, Cash App, Zelle and a merch shop link; empty fields are hidden, so leave the merch link empty until the shop exists. Pages are stored in the online service, so **you must redeploy `worker.js`** (paste it in Cloudflare, Deploy) for this to work. No new secret is needed.
+
 ## v2.16 changes
 
 - **Tycoon:** *Force resignation* appears on a table once a game passes 50 moves each (the side behind resigns, or it is drawn if level). *Delete* an engine (not the last one; its items return to the stash). *Clear games* / *Clear every saved game* and *Reset W/D/L* in Game history. Type in a bot's name box in the shop to rename it (saved; new copies and unnamed engines use it; *Reset shop names*).

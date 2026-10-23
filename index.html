@@ -16,10 +16,12 @@
 <body>
 <nav class="tabs" id="tabs">
   <button id="tabTrain" class="tab active" aria-pressed="true">STUDY</button>
-  <button id="tabStudy" class="tab tomato-tab" aria-pressed="false" aria-label="Study break" title="Study break">🍅</button>
+  <button id="tabBoard" class="tab" aria-pressed="false">LEADERBOARD</button>
   <button id="tabAch" class="tab" aria-pressed="false">ACHIEVEMENTS</button>
   <button id="tabHall" class="tab" aria-pressed="false">TYCOON</button>
-  <button id="tabBoard" class="tab" aria-pressed="false">LEADERBOARD</button>
+  <button id="tabAbout" class="tab" aria-pressed="false">ABOUT</button>
+  <button id="tabSupport" class="tab" aria-pressed="false">MERCH / SUPPORT FREE CHESS</button>
+  <button id="tabStudy" class="tab tomato-tab" aria-pressed="false" aria-label="Study break" title="Study break">🍅</button>
 </nav>
 <div class="statbar" id="statBar">
   <span id="lvlChip" class="lvl" title="Level"></span>
@@ -340,6 +342,18 @@
   <div id="achSummary" class="boardme"></div>
   <div id="achList"></div>
   <div><button id="achExit" class="secondary" style="margin-top:14px">Back to study</button></div>
+</div>
+<div id="aboutView" class="study hidden">
+  <style id="aboutStyle"></style>
+  <div id="aboutBody" class="pagebody"></div>
+  <div id="aboutAdmin" class="owner"></div>
+  <div><button id="aboutExit" class="secondary" style="margin-top:14px">Back to study</button></div>
+</div>
+<div id="supportView" class="study hidden">
+  <h1>Merch / Support Free Chess</h1>
+  <div id="supportBody"></div>
+  <div id="supportAdmin" class="owner"></div>
+  <div><button id="supportExit" class="secondary" style="margin-top:14px">Back to study</button></div>
 </div>
 <div id="fx" aria-hidden="true"></div>
 <div id="toast" class="toast hidden" role="status"></div>
