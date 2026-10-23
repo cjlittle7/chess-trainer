@@ -204,6 +204,10 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.14 changes
+
+- **Game history (TYCOON, Engines tab):** every finished tournament game is saved on the device (the latest 5,000 per engine; not sent to the service; logging out clears them). Per engine: **Add to explorer** makes two game libraries (as White / as Black) for the Opening explorer's "Game library" mode; **Download .pgn** saves them all; **Review games** lists the newest ones, each with **Copy PGN** and **chess.com** (copies the PGN and opens chess.com's analysis page to paste it into; chess.com has no link-based import).
+
 ## v2.13 changes
 
 - **Streaks and toasts:** any completed line of 5+ moves (perfect or not) counts for the daily streak, and the news arrives quickly (a sync shortly after the first qualifying line, at start-up and when you return to the app). Achievement toasts appear bottom right. **Redeploy `worker.js`** for the streak rule.
