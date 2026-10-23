@@ -204,6 +204,12 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.15.1 changes
+
+- The early-game filter and full-strength opening now cover the first **10 moves** (20 moves for bots rated 2700+).
+- **Yippee!** item (500 gold): blows confetti over the board whenever the engine wins.
+- Game history: **Add all to explorer** combines the games of every copy of the same bot (e.g. Grobulus Borgman #1, #2…) into one pair of libraries.
+
 ## v2.15 changes
 
 - **No more nonsense early moves:** for the first 20 moves every bot (yours and the opponents) avoids quiet king walks, quiet queen moves and a-, h- and f-pawn pushes. Captures, checks, castling and anything made while in check are always allowed, and nothing is filtered after move 20. Full-strength Stockfish is left alone.
