@@ -204,6 +204,12 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.16 changes
+
+- **Tycoon:** *Force resignation* appears on a table once a game passes 50 moves each (the side behind resigns, or it is drawn if level). *Delete* an engine (not the last one; its items return to the stash). *Clear games* / *Clear every saved game* and *Reset W/D/L* in Game history. Type in a bot's name box in the shop to rename it (saved; new copies and unnamed engines use it; *Reset shop names*).
+- **Admin settings** (hall): slider for how many opening moves (0–30, default 10) are filtered against silly moves; 2700+ bots get double. The filter now also refuses moves that leave a bishop, knight or rook hanging to captures (a small capture-only search, so exchanges that win the piece back are fine).
+- **Tomato tab:** a 🎉 YIPPEE! button, and *Button sounds*: add your own audio file (under 1.5 MB, kept on the device) to the TOMATO button, the Yippee button, Yippee/Duck wins, boss wins and purchases.
+
 ## v2.15.1 changes
 
 - The early-game filter and full-strength opening now cover the first **10 moves** (20 moves for bots rated 2700+).
