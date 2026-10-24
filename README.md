@@ -204,6 +204,13 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.20 changes
+
+- **Admin force buttons** (Tycoon, Admin settings → "Show force resignation / force win buttons"): four small buttons under each card-view board end the running game: White resigns, Black resigns, White wins, Black wins. The result counts like any other game.
+- **Brilliant moves**: when one of your bots plays a sacrifice (it gives up at least a minor piece's worth of material by force) and a full-strength Stockfish agrees the position afterwards is not worse for the bot, was not already clearly winning, and the move is about as good as the best one, it is logged as brilliant. The ✨ Brilliant moves panel (below the inventory) sorts them into queen sacrifices, rook / exchange sacrifices, piece sacrifices and "forced mate follows". Click View to step through the game on a board, copy its PGN (the move is marked !!), open it on chess.com, or add every game in a category to the explorer. Only games finished after this update are scanned.
+- **No daily cap on boss rewards**: boss gold and EXP are no longer limited per day (the online service's limits are removed as well, so redeploy `worker.js`).
+- **Back to the explorer**: after "Create line from here" the line editor has a "← Back to explorer" button that returns to the exact position you left (it re-reads your collections, so a line you just saved shows up).
+
 ## v2.19.1
 
 - **Colour per table** (Tycoon, Admin settings → "Colour each table plays"): each table, or all at once, can alternate colours as before, always play White, or always play Black.
