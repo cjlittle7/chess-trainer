@@ -204,6 +204,10 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.19.1
+
+- **Colour per table** (Tycoon, Admin settings → "Colour each table plays"): each table, or all at once, can alternate colours as before, always play White, or always play Black.
+
 ## v2.19 changes
 
 - **Opening theory for all bots** (Tycoon page, Admin settings): a "house opening book" that applies to every bot, yours and the opponents'. Write one line per opening starting from move 1, with an optional weight before a colon, e.g. `60: e4 e5 Nf3 Nc6`. Where several lines agree so far, the next move is picked in proportion to the weights (`60: e4` / `30: d4` / `10: c4` gives White 60/30/10 on move 1). A live preview shows the resulting shares and flags lines with illegal moves. Once no line fits the game, bots play as usual. Separate boxes for when a bot plays White and when it plays Black. Switch it on with the checkbox; "Your engines' own opening packs come first" lets bought packs override it. The scripted characters (Grobulus, Barry, Gender) keep their own openings.
