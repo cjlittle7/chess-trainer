@@ -204,6 +204,13 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.18 changes
+
+- **Tycoon page**: the gold / bot EXP header is gone; the Settings (keep playing, sound, boss rewards left) now sit below the boards.
+- **Table View** is now a normal part of the page (button "🏟 Table View" / "🃏 Card View"; your choice is remembered). It replaces the card boards with the grey tournament table, and everything else stays underneath, so the page scrolls as usual. The decorative clocks show no times or move numbers: the pad of the side to move looks pressed, and the losing side gets a 🚩 when a game ends (none for a draw).
+- **Tables and bots** (engine, speed, move time, name, opening, items, stage, On switch) are listed under the boards in both views.
+- **Inventory**: your unequipped items and your opening packs are chips. Drag one onto a bot's Item or Opening box (or tap the chip, then tap the box) to equip it.
+
 ## v2.17 changes
 
 - **Tabs**: STUDY, LEADERBOARD, ACHIEVEMENTS, TYCOON, ABOUT, MERCH / SUPPORT FREE CHESS, and the 🍅 on the far right (the row wraps on a phone).
