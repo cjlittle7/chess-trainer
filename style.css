@@ -466,7 +466,11 @@ button.nextbtn { background:#4a4540; color:var(--text); width:30px; height:30px;
 
 .toast { position:fixed; left:50%; top:calc(18px + env(safe-area-inset-top)); transform:translateX(-50%); z-index:50; background:#2b2825; border:2px solid var(--accent);
          color:var(--text); padding:12px 22px; border-radius:12px; font-weight:700; box-shadow:0 8px 28px rgba(0,0,0,.5); max-width:90vw; text-align:center; }
-.toast.achievement { left:auto; right:16px; top:auto; bottom:calc(16px + env(safe-area-inset-bottom)); transform:none; border-color:#e0b43a; color:#f4d675; font-size:17px; text-align:left; max-width:min(360px, calc(100vw - 32px)); }
+/* notification cards: one colour per kind, in the bottom-right corner */
+.toast.k { left:auto; right:16px; top:auto; bottom:calc(16px + env(safe-area-inset-bottom)); transform:none; text-align:left; max-width:min(380px, calc(100vw - 32px)); font-size:15px; line-height:1.35; padding:10px 16px 12px 18px; border-width:1px 1px 1px 6px; border-style:solid; border-color:var(--tc); background:linear-gradient(135deg, color-mix(in srgb, var(--tc) 22%, #1f1d1b), #1f1d1b 70%); color:#f2eee9; box-shadow:0 8px 28px rgba(0,0,0,.55), 0 0 0 1px color-mix(in srgb, var(--tc) 35%, transparent), 0 0 22px color-mix(in srgb, var(--tc) 30%, transparent); }
+.toast.k::before { content:attr(data-label); display:block; font-size:11px; letter-spacing:.14em; text-transform:uppercase; font-weight:800; color:var(--tc); margin-bottom:3px; }
+.toast.achievement { --tc:#f0c43c; } .toast.brilliant { --tc:#4aa8ff; } .toast.boss { --tc:#4cc46a; }
+.toast.streak { --tc:#ff9438; } .toast.level { --tc:#b184f5; } .toast.warn { --tc:#ef6a62; }
 .tomato-warn { margin:10px auto 0; max-width:420px; background:#5a2f2d; color:#f3c9c7; border-radius:8px; padding:10px 14px; font-size:14px; }
 .tomato-btn:disabled { background:#6b4a48; box-shadow:none; opacity:.6; }
 .progtab { width:100%; border-collapse:collapse; margin-bottom:10px; } .progtab td { padding:3px 0; } .progtab td:last-child { text-align:right; font-weight:600; }
@@ -693,6 +697,22 @@ body.tvopen { overflow:hidden; }
   .adminrow { display:flex; flex-wrap:wrap; gap:4px; } .adminrow button { flex:1 1 30%; }
 }
 .adminrow { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; } .adminrow.hidden { display:none; }
+
+/* achievements page: colour-coded tiers */
+.ach.got { background:linear-gradient(160deg, color-mix(in srgb, var(--tier) 26%, #1f1d1b), #1f1d1b); box-shadow:0 0 12px color-mix(in srgb, var(--tier) 22%, transparent); }
+.ach.t0 { --tier:#b8793e; } .ach.t1 { --tier:#a8b0b8; } .ach.t2 { --tier:#f0c43c; } .ach.t3 { --tier:#7fd1c7; } .ach.t4 { --tier:#5cb8f0; } .ach.t5 { --tier:#d98cf0; }
+.ach.got b { color:var(--tier); }
+.achcat { border-left:4px solid #f0c43c; } .achcat .achbar i { background:linear-gradient(90deg, #b8793e, #f0c43c); }
+/* sidebar: everything wraps, nothing is cut off */
+.sidebody, .sidebody * { overflow-wrap:anywhere; min-width:0; }
+.sidebody .row, .sidebody .shoprow, .sidebody .invrow { flex-wrap:wrap; }
+.sidebody select, .sidebody input:not([type=checkbox]):not([type=range]), .sidebody button { max-width:100%; }
+.sidebody button { white-space:normal; height:auto; }
+.sidebody small, .sidebody label, .sidebody span, .sidebody b { white-space:normal; text-overflow:clip; }
+.sidebody table { width:100%; table-layout:fixed; } .sidebody td, .sidebody th { overflow-wrap:anywhere; }
+.sidetabs { overflow-x:visible; flex-wrap:wrap; } .sidetabs button { flex:1 1 auto; padding:7px 8px; }
+.hallbrill { margin-top:14px; padding:12px; border-left:4px solid #4aa8ff; } .hallbrill h2 { margin:0 0 6px; font-size:17px; color:#8cc8ff; }
+.sidebody .sr-buy { flex:1 1 100%; max-width:100%; } .sidebody .paybtns { max-width:100%; flex-wrap:wrap; display:flex; gap:4px; } .sidebody .paybtns button { flex:1 1 auto; }
 
 /* board themes */
 body.brd-green cg-board { background-color:#eeeed2; background-image:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4IDgiIHNoYXBlLXJlbmRlcmluZz0iY3Jpc3BFZGdlcyI+PGcgZmlsbD0iIzc2OTY1NiI+PHJlY3QgeD0iMSIgeT0iMCIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjMiIHk9IjAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSI1IiB5PSIwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iNyIgeT0iMCIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjAiIHk9IjEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSIyIiB5PSIxIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iNCIgeT0iMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjYiIHk9IjEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSIxIiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iMyIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjUiIHk9IjIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSI3IiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iMCIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjIiIHk9IjMiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSI0IiB5PSIzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iNiIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjEiIHk9IjQiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSIzIiB5PSI0IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iNSIgeT0iNCIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjciIHk9IjQiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSIwIiB5PSI1IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iMiIgeT0iNSIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjQiIHk9IjUiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSI2IiB5PSI1IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iMSIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjMiIHk9IjYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSI1IiB5PSI2IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iNyIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjAiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48cmVjdCB4PSIyIiB5PSI3IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIi8+PHJlY3QgeD0iNCIgeT0iNyIgd2lkdGg9IjEiIGhlaWdodD0iMSIvPjxyZWN0IHg9IjYiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz48L2c+PC9zdmc+'); }
