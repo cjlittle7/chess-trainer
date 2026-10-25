@@ -204,6 +204,12 @@ Keep both secrets private. Anyone with the admin token and the key can read reco
 - **Online service:** this release adds columns and tracking to the worker, so paste the new `worker.js` into Cloudflare and Deploy. Existing accounts are upgraded automatically (lifetime gold starts from the gold they hold).
 - The result panel now keeps each stat on one line and puts the EXP breakdown on a note line below it.
 
+## v2.21 changes
+
+- **Tycoon page redesign**: the boards sit on the left (cards, or the Table View), and a scrollable sidebar on the right holds six tabs: 🤖 Bots (your engines), 🎒 Bag (items and openings to drag onto a bot), 🛒 Shop (engines, openings, items), 📜 Games (saved game history), ✨ Best (brilliant moves) and ⚙ Admin (settings, filters, colours, opening book, force buttons). Under the boards, the controls for each table have their own tab (Table 1 to Table 4), so you see one table at a time. On a phone the page is one column: boards in a 2 x 2 grid, then the table tabs, then the sidebar tabs.
+- **Shop bot names are fixed**: nobody can rename the bots in the shop any more. The names you had set are shared with everybody once you publish them: Admin tab → "Publish bot names for everybody" (it asks for your admin token the first time, or uses the one saved from the About page). Until names are published, the old local names still show on the device that set them. Redeploy `worker.js` first (it now accepts a `botnames` entry).
+- **Force draw**: the admin force buttons now include Draw, so any running game can be ended as a draw at any point.
+
 ## v2.20 changes
 
 - **Admin force buttons** (Tycoon, Admin settings → "Show force resignation / force win buttons"): four small buttons under each card-view board end the running game: White resigns, Black resigns, White wins, Black wins. The result counts like any other game.
